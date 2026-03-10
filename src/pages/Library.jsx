@@ -11,7 +11,6 @@ import {
   serverTimestamp,
 } from "firebase/firestore"
 
-const UID = "N7dBZAH0HkhCCtlAPnfFIWmxn6t1"
 const ACCENT = "#7B8FA8"
 const BG = "#F6F8FA"
 const CARD_BG = "#FFFFFF"
@@ -20,7 +19,7 @@ const MUTED = "#6B7A99"
 const BORDER = "#E2E8F0"
 const CATEGORIES = ["All", "Framework", "Playbook", "SOP", "Reference"]
 
-export default function Library() {
+export default function Library({ user }) {
   const [docs, setDocs] = useState([])
   const [loading, setLoading] = useState(true)
   const [search, setSearch] = useState("")
@@ -49,7 +48,7 @@ export default function Library() {
       await addDoc(collection(db, "library"), {
         ...form,
         tags: form.tags.split(",").map(t => t.trim()).filter(Boolean),
-        uid: UID,
+        uid: user.uid,
         createdAt: serverTimestamp(),
       })
       setForm({ title: "", category: "Framework", description: "", content: "", tags: "" })

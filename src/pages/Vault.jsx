@@ -12,7 +12,6 @@ import {
 } from "firebase/firestore"
 import { ref, uploadBytesResumable, getDownloadURL, deleteObject } from "firebase/storage"
 
-const UID = "N7dBZAH0HkhCCtlAPnfFIWmxn6t1"
 const ACCENT = "#A89078"
 const BG = "#FAF7F4"
 const CARD_BG = "#FFFFFF"
@@ -40,7 +39,7 @@ function fmtSize(bytes) {
   return (bytes / (1024 * 1024)).toFixed(1) + " MB"
 }
 
-export default function Vault() {
+export default function Vault({ user }) {
   const [assets, setAssets] = useState([])
   const [loading, setLoading] = useState(true)
   const [search, setSearch] = useState("")
@@ -70,7 +69,7 @@ export default function Vault() {
     setUploading(true)
     setProgress(0)
     try {
-      const storagePath = `vault/${UID}/${Date.now()}_${file.name}`
+      const storagePath = `vault/${user.uid}/${Date.now()}_${file.name}`
       const storageRef = ref(storage, storagePath)
       const task = uploadBytesResumable(storageRef, file)
       await new Promise((resolve, reject) => {
@@ -91,7 +90,7 @@ export default function Vault() {
         fileSize: file.size,
         fileType: file.type,
         storagePath,
-        uid: UID,
+        uid: user.uid,
         createdAt: serverTimestamp(),
       })
       setForm({ name: "", category: "Brand", description: "", tags: "" })
