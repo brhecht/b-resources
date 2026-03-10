@@ -4,12 +4,12 @@ import { getAuth } from "firebase/auth"
 import { getStorage } from "firebase/storage"
 
 const firebaseConfig = {
-  apiKey: import.meta.env.VITE_FIREBASE_API_KEY,
-  authDomain: import.meta.env.VITE_FIREBASE_AUTH_DOMAIN,
-  projectId: import.meta.env.VITE_FIREBASE_PROJECT_ID,
-  storageBucket: import.meta.env.VITE_FIREBASE_STORAGE_BUCKET,
-  messagingSenderId: import.meta.env.VITE_FIREBASE_MESSAGING_SENDER_ID,
-  appId: import.meta.env.VITE_FIREBASE_APP_ID,
+  apiKey: "AIzaSyDUdUq_JxA-MeU8tZIex0PVFExtWIz50kE",
+  authDomain: "b-things.firebaseapp.com",
+  projectId: "b-things",
+  storageBucket: "b-things.firebasestorage.app",
+  messagingSenderId: "995860081028",
+  appId: "1:995860081028:web:25ebdd0a1b56b402d715d1",
 }
 
 const app = initializeApp(firebaseConfig)
