@@ -49,6 +49,7 @@ export default function Vault({ user }) {
   const [file, setFile] = useState(null)
   const [progress, setProgress] = useState(0)
   const [uploading, setUploading] = useState(false)
+  const [dragOver, setDragOver] = useState(false)
   const fileRef = useRef()
 
   useEffect(() => { loadAssets() }, [])
@@ -115,6 +116,22 @@ export default function Vault({ user }) {
     } catch (e) { console.error(e) }
   }
 
+  function handleDrop(e) {
+    e.preventDefault()
+    setDragOver(false)
+    const dropped = e.dataTransfer.files[0]
+    if (dropped) setFile(dropped)
+  }
+
+  function handleDragOver(e) {
+    e.preventDefault()
+    setDragOver(true)
+  }
+
+  function handleDragLeave() {
+    setDragOver(false)
+  }
+
   const filtered = assets.filter(a => {
     const matchCat = activeCategory === "All" || a.category === activeCategory
     const matchSearch = !search ||
@@ -169,13 +186,59 @@ export default function Vault({ user }) {
           <div style={{ background: "#fff", borderRadius: 16, padding: 32, width: "100%", maxWidth: 500, maxHeight: "90vh", overflowY: "auto" }}>
             <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 24 }}>
               <h2 style={{ margin: 0, fontSize: 20, fontWeight: 700 }}>Upload Asset</h2>
-              <button onClick={() => setShowAdd(false)} style={{ background: "none", border: "none", fontSize: 24, cursor: "pointer", color: "#94A3B8" }}>×</button>
+              <button onClick={() => { setShowAdd(false); setFile(null); if (fileRef.current) fileRef.current.value = "" }} style={{ background: "none", border: "none", fontSize: 24, cursor: "pointer", color: "#94A3B8" }}>×</button>
             </div>
             <form onSubmit={handleUpload} style={{ display: "flex", flexDirection: "column", gap: 14 }}>
-              <div>
-                <label style={{ display: "block", fontSize: 13, fontWeight: 600, marginBottom: 6, color: MUTED }}>File *</label>
-                <input ref={fileRef} type="file" required onChange={e => setFile(e.target.files[0])} style={{ width: "100%", fontSize: 13 }} />
+              {/* Hidden native file input */}
+              <input
+                ref={fileRef}
+                type="file"
+                required
+                onChange={e => setFile(e.target.files[0])}
+                style={{ display: "none" }}
+              />
+
+              {/* Styled upload zone */}
+              <div
+                onClick={() => !uploading && fileRef.current?.click()}
+                onDrop={handleDrop}
+                onDragOver={handleDragOver}
+                onDragLeave={handleDragLeave}
+                style={{
+                  border: `2px dashed ${dragOver ? ACCENT : file ? ACCENT : BORDER}`,
+                  borderRadius: 12,
+                  padding: "28px 20px",
+                  textAlign: "center",
+                  cursor: uploading ? "not-allowed" : "pointer",
+                  background: dragOver ? ACCENT + "0D" : file ? ACCENT + "0A" : BG,
+                  transition: "all 0.15s",
+                  userSelect: "none",
+                }}
+              >
+                {file ? (
+                  <>
+                    <div style={{ fontSize: 32, marginBottom: 8 }}>{fileIcon(file.type)}</div>
+                    <div style={{ fontSize: 14, fontWeight: 600, color: TEXT, marginBottom: 4, wordBreak: "break-word" }}>{file.name}</div>
+                    <div style={{ fontSize: 12, color: MUTED, marginBottom: 10 }}>{fmtSize(file.size)}</div>
+                    <button
+                      type="button"
+                      onClick={e => { e.stopPropagation(); setFile(null); if (fileRef.current) fileRef.current.value = "" }}
+                      style={{ fontSize: 12, color: MUTED, background: "none", border: `1px solid ${BORDER}`, borderRadius: 6, padding: "4px 12px", cursor: "pointer" }}
+                    >
+                      Change file
+                    </button>
+                  </>
+                ) : (
+                  <>
+                    <div style={{ fontSize: 36, marginBottom: 10 }}>📁</div>
+                    <div style={{ fontSize: 14, fontWeight: 600, color: TEXT, marginBottom: 4 }}>
+                      Drop a file here, or <span style={{ color: ACCENT, textDecoration: "underline" }}>browse</span>
+                    </div>
+                    <div style={{ fontSize: 12, color: MUTED }}>Any file type · Up to 100 MB</div>
+                  </>
+                )}
               </div>
+
               <input placeholder="Name (defaults to filename)" value={form.name} onChange={e => setForm(f => ({ ...f, name: e.target.value }))} style={iStyle} />
               <select value={form.category} onChange={e => setForm(f => ({ ...f, category: e.target.value }))} style={iStyle}>
                 {CATEGORIES.filter(c => c !== "All").map(c => <option key={c}>{c}</option>)}
