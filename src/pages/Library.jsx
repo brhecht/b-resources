@@ -111,7 +111,8 @@ export default function Library({ user }) {
       await loadDocs()
     } catch (e) {
       console.error(e)
-      alert("Save failed. Please try again.")
+      alert("Save failed: " + (e?.code || e?.message || e))
+
     }
     setSaving(false)
     setUploading(false)

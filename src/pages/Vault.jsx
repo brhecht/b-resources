@@ -100,7 +100,7 @@ export default function Vault({ user }) {
       setShowAdd(false)
       setProgress(0)
       await loadAssets()
-    } catch (e) { console.error(e); alert("Upload failed.") }
+    } catch (e) { console.error(e); alert("Upload failed: " + (e?.code || e?.message || e)) }
     setUploading(false)
   }
 
