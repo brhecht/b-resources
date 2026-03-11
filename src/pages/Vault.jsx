@@ -193,7 +193,6 @@ export default function Vault({ user }) {
               <input
                 ref={fileRef}
                 type="file"
-                required
                 onChange={e => setFile(e.target.files[0])}
                 style={{ display: "none" }}
               />
