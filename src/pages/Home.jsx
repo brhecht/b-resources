@@ -73,9 +73,6 @@ function ToolRow({ tool }) {
         </div>
         <div style={{ fontSize: 14, color: "#A0A8B0", lineHeight: 1.45 }}>{tool.desc}</div>
       </div>
-      <span style={{ fontSize: 10, fontWeight: 600, letterSpacing: "0.8px", textTransform: "uppercase", padding: "4px 10px", borderRadius: 6, flexShrink: 0, background: "rgba(0,0,0,0.04)", color: "#B0B8C4" }}>
-        Coming
-      </span>
       <span style={{ color: "#D0D4DA", fontSize: 16, flexShrink: 0, transition: "color 0.2s, transform 0.2s" }}>&#8594;</span>
     </Link>
   )
