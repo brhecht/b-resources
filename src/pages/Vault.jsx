@@ -7,7 +7,8 @@ import {
   getDocs,
   addDoc,
   deleteDoc,
-  doc
+  updateDoc,
+  doc,
   serverTimestamp,
 } from "firebase/firestore"
 import { ref, uploadBytesResumable, getDownloadURL, deleteObject } from "firebase/storage"
@@ -39,18 +40,66 @@ function fmtSize(bytes) {
   return (bytes / (1024 * 1024)).toFixed(1) + " MB"
 }
 
+function FilePreview({ fileUrl, fileType, fileName }) {
+  if (!fileUrl) return null
+
+  if (fileType?.startsWith("image/")) {
+    return (
+      <div style={{ marginBottom: 20, borderRadius: 10, overflow: "hidden", border: `1px solid ${BORDER}` }}>
+        <img src={fileUrl} alt={fileName} style={{ width: "100%", maxHeight: 500, objectFit: "contain", display: "block", background: "#FAF7F4" }} />
+      </div>
+    )
+  }
+
+  if (fileType === "application/pdf") {
+    return (
+      <div style={{ marginBottom: 20, borderRadius: 10, overflow: "hidden", border: `1px solid ${BORDER}` }}>
+        <iframe src={fileUrl} title={fileName} style={{ width: "100%", height: 500, border: "none" }} />
+      </div>
+    )
+  }
+
+  if (fileType?.startsWith("video/")) {
+    return (
+      <div style={{ marginBottom: 20, borderRadius: 10, overflow: "hidden", border: `1px solid ${BORDER}` }}>
+        <video src={fileUrl} controls style={{ width: "100%", maxHeight: 400, display: "block", background: "#000" }} />
+      </div>
+    )
+  }
+
+  if (fileType?.startsWith("audio/")) {
+    return (
+      <div style={{ marginBottom: 20, padding: 20, background: "#FAF7F4", borderRadius: 10, border: `1px solid ${BORDER}` }}>
+        <audio src={fileUrl} controls style={{ width: "100%" }} />
+      </div>
+    )
+  }
+
+  return null
+}
+
 export default function Vault({ user }) {
   const [assets, setAssets] = useState([])
   const [loading, setLoading] = useState(true)
   const [search, setSearch] = useState("")
   const [activeCategory, setActiveCategory] = useState("All")
   const [showAdd, setShowAdd] = useState(false)
+  const [viewAsset, setViewAsset] = useState(null)
+  const [editAsset, setEditAsset] = useState(null)
   const [form, setForm] = useState({ name: "", category: "Brand", description: "", tags: "" })
+  const [editForm, setEditForm] = useState({ name: "", category: "Brand", description: "", tags: "" })
   const [file, setFile] = useState(null)
   const [progress, setProgress] = useState(0)
   const [uploading, setUploading] = useState(false)
+  const [saving, setSaving] = useState(false)
   const [dragOver, setDragOver] = useState(false)
   const fileRef = useRef()
+
+  // Edit file state
+  const [editFile, setEditFile] = useState(null)
+  const [editProgress, setEditProgress] = useState(0)
+  const [editUploading, setEditUploading] = useState(false)
+  const editFileRef = useRef()
 
   useEffect(() => { loadAssets() }, [])
 
@@ -68,6 +117,7 @@ export default function Vault({ user }) {
     e.preventDefault()
     if (!file) return alert("Please select a file.")
     setUploading(true)
+    setSaving(true)
     setProgress(0)
     try {
       const storagePath = `vault/${user.uid}/${Date.now()}_${file.name}`
@@ -102,6 +152,69 @@ export default function Vault({ user }) {
       await loadAssets()
     } catch (e) { console.error("Vault upload error:", e); alert("Upload failed: " + (e?.message || e?.code || "Unknown error")) }
     setUploading(false)
+    setSaving(false)
+  }
+
+  function openEdit(asset) {
+    setEditAsset(asset)
+    setEditForm({
+      name: asset.name || "",
+      category: asset.category || "Brand",
+      description: asset.description || "",
+      tags: (asset.tags || []).join(", "),
+    })
+    setEditFile(null)
+    setEditProgress(0)
+    setViewAsset(null)
+  }
+
+  async function handleUpdate(e) {
+    e.preventDefault()
+    if (!editAsset) return
+    setSaving(true)
+    setEditUploading(false)
+    setEditProgress(0)
+    try {
+      const updates = {
+        name: editForm.name,
+        category: editForm.category,
+        description: editForm.description,
+        tags: editForm.tags.split(",").map(t => t.trim()).filter(Boolean),
+      }
+
+      if (editFile) {
+        setEditUploading(true)
+        if (editAsset.storagePath) {
+          try { await deleteObject(ref(storage, editAsset.storagePath)) } catch (_) {}
+        }
+        const storagePath = `vault/${user.uid}/${Date.now()}_${editFile.name}`
+        const storageRef = ref(storage, storagePath)
+        const task = uploadBytesResumable(storageRef, editFile)
+        await new Promise((resolve, reject) => {
+          task.on("state_changed",
+            snap => setEditProgress(Math.round((snap.bytesTransferred / snap.totalBytes) * 100)),
+            reject,
+            resolve
+          )
+        })
+        updates.fileUrl = await getDownloadURL(storageRef)
+        updates.fileName = editFile.name
+        updates.fileSize = editFile.size
+        updates.fileType = editFile.type
+        updates.storagePath = storagePath
+        setEditUploading(false)
+      }
+
+      await updateDoc(doc(db, "vault", editAsset.id), updates)
+      setEditAsset(null)
+      setEditFile(null)
+      await loadAssets()
+    } catch (e) {
+      console.error(e)
+      alert("Update failed. Please try again.")
+    }
+    setSaving(false)
+    setEditUploading(false)
   }
 
   async function handleDelete(asset) {
@@ -113,6 +226,8 @@ export default function Vault({ user }) {
       }
       await deleteDoc(doc(db, "vault", asset.id))
       setAssets(prev => prev.filter(a => a.id !== asset.id))
+      if (viewAsset?.id === asset.id) setViewAsset(null)
+      if (editAsset?.id === asset.id) setEditAsset(null)
     } catch (e) { console.error(e) }
   }
 
@@ -176,117 +291,235 @@ export default function Vault({ user }) {
           <div style={{ textAlign: "center", color: MUTED, padding: 60 }}>No assets found.</div>
         ) : (
           <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(280px, 1fr))", gap: 18 }}>
-            {filtered.map(a => <AssetCard key={a.id} asset={a} onDelete={() => handleDelete(a)} accent={ACCENT} border={BORDER} muted={MUTED} />)}
+            {filtered.map(a => (
+              <AssetCard key={a.id} asset={a}
+                onView={() => setViewAsset(a)}
+                onEdit={() => openEdit(a)}
+                onDelete={() => handleDelete(a)}
+                accent={ACCENT} border={BORDER} muted={MUTED}
+              />
+            ))}
           </div>
         )}
       </div>
 
+      {/* ── ADD MODAL ── */}
       {showAdd && (
-        <div style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.4)", display: "flex", alignItems: "center", justifyContent: "center", zIndex: 1000, padding: 20 }}>
-          <div style={{ background: "#fff", borderRadius: 16, padding: 32, width: "100%", maxWidth: 500, maxHeight: "90vh", overflowY: "auto" }}>
-            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 24 }}>
-              <h2 style={{ margin: 0, fontSize: 20, fontWeight: 700 }}>Upload Asset</h2>
-              <button onClick={() => { setShowAdd(false); setFile(null); if (fileRef.current) fileRef.current.value = "" }} style={{ background: "none", border: "none", fontSize: 24, cursor: "pointer", color: "#94A3B8" }}>×</button>
-            </div>
-            <form onSubmit={handleUpload} style={{ display: "flex", flexDirection: "column", gap: 14 }}>
-              {/* Hidden native file input */}
-              <input
-                ref={fileRef}
-                type="file"
-                onChange={e => setFile(e.target.files[0])}
-                style={{ display: "none" }}
-              />
-
-              {/* Styled upload zone */}
-              <div
-                onClick={() => !uploading && fileRef.current?.click()}
-                onDrop={handleDrop}
-                onDragOver={handleDragOver}
-                onDragLeave={handleDragLeave}
-                style={{
-                  border: `2px dashed ${dragOver ? ACCENT : file ? ACCENT : BORDER}`,
-                  borderRadius: 12,
-                  padding: "28px 20px",
-                  textAlign: "center",
-                  cursor: uploading ? "not-allowed" : "pointer",
-                  background: dragOver ? ACCENT + "0D" : file ? ACCENT + "0A" : BG,
-                  transition: "all 0.15s",
-                  userSelect: "none",
-                }}
-              >
-                {file ? (
-                  <>
-                    <div style={{ fontSize: 32, marginBottom: 8 }}>{fileIcon(file.type)}</div>
-                    <div style={{ fontSize: 14, fontWeight: 600, color: TEXT, marginBottom: 4, wordBreak: "break-word" }}>{file.name}</div>
-                    <div style={{ fontSize: 12, color: MUTED, marginBottom: 10 }}>{fmtSize(file.size)}</div>
-                    <button
-                      type="button"
-                      onClick={e => { e.stopPropagation(); setFile(null); if (fileRef.current) fileRef.current.value = "" }}
-                      style={{ fontSize: 12, color: MUTED, background: "none", border: `1px solid ${BORDER}`, borderRadius: 6, padding: "4px 12px", cursor: "pointer" }}
-                    >
-                      Change file
-                    </button>
-                  </>
-                ) : (
-                  <>
-                    <div style={{ fontSize: 36, marginBottom: 10 }}>📁</div>
-                    <div style={{ fontSize: 14, fontWeight: 600, color: TEXT, marginBottom: 4 }}>
-                      Drop a file here, or <span style={{ color: ACCENT, textDecoration: "underline" }}>browse</span>
-                    </div>
-                    <div style={{ fontSize: 12, color: MUTED }}>Any file type · Up to 100 MB</div>
-                  </>
-                )}
-              </div>
-
-              <input placeholder="Name (defaults to filename)" value={form.name} onChange={e => setForm(f => ({ ...f, name: e.target.value }))} style={iStyle} />
-              <select value={form.category} onChange={e => setForm(f => ({ ...f, category: e.target.value }))} style={iStyle}>
-                {CATEGORIES.filter(c => c !== "All").map(c => <option key={c}>{c}</option>)}
-              </select>
-              <input placeholder="Description" value={form.description} onChange={e => setForm(f => ({ ...f, description: e.target.value }))} style={iStyle} />
-              <input placeholder="Tags (comma separated)" value={form.tags} onChange={e => setForm(f => ({ ...f, tags: e.target.value }))} style={iStyle} />
-              {uploading && (
-                <div>
-                  <div style={{ height: 6, background: "#F1EDE8", borderRadius: 4, overflow: "hidden" }}>
-                    <div style={{ height: "100%", width: `${progress}%`, background: ACCENT, transition: "width 0.2s" }} />
+        <Modal onClose={() => { setShowAdd(false); setFile(null); if (fileRef.current) fileRef.current.value = "" }} title="Upload Asset" accent={ACCENT}>
+          <form onSubmit={handleUpload} style={{ display: "flex", flexDirection: "column", gap: 14 }}>
+            <input ref={fileRef} type="file" onChange={e => setFile(e.target.files[0])} style={{ display: "none" }} />
+            <div
+              onClick={() => !uploading && fileRef.current?.click()}
+              onDrop={handleDrop}
+              onDragOver={handleDragOver}
+              onDragLeave={handleDragLeave}
+              style={{
+                border: `2px dashed ${dragOver ? ACCENT : file ? ACCENT : BORDER}`,
+                borderRadius: 12,
+                padding: "28px 20px",
+                textAlign: "center",
+                cursor: uploading ? "not-allowed" : "pointer",
+                background: dragOver ? ACCENT + "0D" : file ? ACCENT + "0A" : BG,
+                transition: "all 0.15s",
+                userSelect: "none",
+              }}
+            >
+              {file ? (
+                <>
+                  <div style={{ fontSize: 32, marginBottom: 8 }}>{fileIcon(file.type)}</div>
+                  <div style={{ fontSize: 14, fontWeight: 600, color: TEXT, marginBottom: 4, wordBreak: "break-word" }}>{file.name}</div>
+                  <div style={{ fontSize: 12, color: MUTED, marginBottom: 10 }}>{fmtSize(file.size)}</div>
+                  <button type="button" onClick={e => { e.stopPropagation(); setFile(null); if (fileRef.current) fileRef.current.value = "" }}
+                    style={{ fontSize: 12, color: MUTED, background: "none", border: `1px solid ${BORDER}`, borderRadius: 6, padding: "4px 12px", cursor: "pointer" }}>
+                    Change file
+                  </button>
+                </>
+              ) : (
+                <>
+                  <div style={{ fontSize: 36, marginBottom: 10 }}>📁</div>
+                  <div style={{ fontSize: 14, fontWeight: 600, color: TEXT, marginBottom: 4 }}>
+                    Drop a file here, or <span style={{ color: ACCENT, textDecoration: "underline" }}>browse</span>
                   </div>
-                  <div style={{ fontSize: 12, color: MUTED, marginTop: 4 }}>{progress}% uploaded</div>
-                </div>
+                  <div style={{ fontSize: 12, color: MUTED }}>Any file type · Up to 100 MB</div>
+                </>
               )}
-              <button type="submit" disabled={uploading} style={{ background: ACCENT, color: "#fff", border: "none", borderRadius: 8, padding: "10px", cursor: uploading ? "not-allowed" : "pointer", fontWeight: 600, opacity: uploading ? 0.7 : 1 }}>
-                {uploading ? `Uploading ${progress}%...` : "Upload"}
+            </div>
+
+            <input placeholder="Name (defaults to filename)" value={form.name} onChange={e => setForm(f => ({ ...f, name: e.target.value }))} style={iStyle} />
+            <select value={form.category} onChange={e => setForm(f => ({ ...f, category: e.target.value }))} style={iStyle}>
+              {CATEGORIES.filter(c => c !== "All").map(c => <option key={c}>{c}</option>)}
+            </select>
+            <input placeholder="Description" value={form.description} onChange={e => setForm(f => ({ ...f, description: e.target.value }))} style={iStyle} />
+            <input placeholder="Tags (comma separated)" value={form.tags} onChange={e => setForm(f => ({ ...f, tags: e.target.value }))} style={iStyle} />
+            {uploading && (
+              <div>
+                <div style={{ height: 6, background: "#F1EDE8", borderRadius: 4, overflow: "hidden" }}>
+                  <div style={{ height: "100%", width: `${progress}%`, background: ACCENT, transition: "width 0.2s" }} />
+                </div>
+                <div style={{ fontSize: 12, color: MUTED, marginTop: 4 }}>{progress}% uploaded</div>
+              </div>
+            )}
+            <button type="submit" disabled={saving} style={{ background: ACCENT, color: "#fff", border: "none", borderRadius: 8, padding: "10px", cursor: saving ? "not-allowed" : "pointer", fontWeight: 600, opacity: saving ? 0.7 : 1 }}>
+              {saving ? `Uploading ${progress}%...` : "Upload"}
+            </button>
+          </form>
+        </Modal>
+      )}
+
+      {/* ── VIEW MODAL with preview ── */}
+      {viewAsset && (
+        <Modal onClose={() => setViewAsset(null)} title={viewAsset.name} accent={ACCENT} wide>
+          <div>
+            <div style={{ display: "flex", gap: 8, marginBottom: 16, flexWrap: "wrap", alignItems: "center" }}>
+              <span style={{ background: ACCENT + "22", color: ACCENT, padding: "2px 10px", borderRadius: 12, fontSize: 12, fontWeight: 600 }}>{viewAsset.category}</span>
+              {viewAsset.fileSize ? <span style={{ fontSize: 12, color: MUTED }}>{fmtSize(viewAsset.fileSize)}</span> : null}
+              {(viewAsset.tags || []).map(t => <span key={t} style={{ background: "#F5F0EB", color: MUTED, padding: "2px 10px", borderRadius: 12, fontSize: 12 }}>{t}</span>)}
+            </div>
+            {viewAsset.description && <p style={{ color: MUTED, marginBottom: 20, fontSize: 14 }}>{viewAsset.description}</p>}
+
+            {/* File preview */}
+            <FilePreview fileUrl={viewAsset.fileUrl} fileType={viewAsset.fileType} fileName={viewAsset.fileName} />
+
+            {/* Download link */}
+            {viewAsset.fileUrl && (
+              <a
+                href={viewAsset.fileUrl}
+                target="_blank"
+                rel="noopener noreferrer"
+                style={{ display: "inline-flex", alignItems: "center", gap: 6, background: ACCENT + "18", color: ACCENT, padding: "7px 14px", borderRadius: 8, fontSize: 13, fontWeight: 600, textDecoration: "none", marginBottom: 20 }}
+              >
+                {fileIcon(viewAsset.fileType)} Download {viewAsset.fileName || "file"}
+              </a>
+            )}
+
+            <div style={{ display: "flex", gap: 10, marginTop: 20 }}>
+              <button onClick={() => openEdit(viewAsset)} style={{ background: ACCENT + "18", color: ACCENT, border: `1px solid ${ACCENT}44`, borderRadius: 8, padding: "8px 16px", cursor: "pointer", fontSize: 13, fontWeight: 600 }}>
+                ✏️ Edit
               </button>
-            </form>
+              <button onClick={() => handleDelete(viewAsset)} style={{ background: "#FEF2F2", color: "#EF4444", border: "1px solid #FECACA", borderRadius: 8, padding: "8px 16px", cursor: "pointer", fontSize: 13 }}>
+                🗑 Delete
+              </button>
+            </div>
           </div>
-        </div>
+        </Modal>
+      )}
+
+      {/* ── EDIT MODAL ── */}
+      {editAsset && (
+        <Modal onClose={() => { setEditAsset(null); setEditFile(null) }} title="Edit Asset" accent={ACCENT}>
+          <form onSubmit={handleUpdate} style={{ display: "flex", flexDirection: "column", gap: 14 }}>
+            <input required placeholder="Name" value={editForm.name} onChange={e => setEditForm(f => ({ ...f, name: e.target.value }))} style={iStyle} />
+            <select value={editForm.category} onChange={e => setEditForm(f => ({ ...f, category: e.target.value }))} style={iStyle}>
+              {CATEGORIES.filter(c => c !== "All").map(c => <option key={c}>{c}</option>)}
+            </select>
+            <input placeholder="Description" value={editForm.description} onChange={e => setEditForm(f => ({ ...f, description: e.target.value }))} style={iStyle} />
+            <input placeholder="Tags (comma separated)" value={editForm.tags} onChange={e => setEditForm(f => ({ ...f, tags: e.target.value }))} style={iStyle} />
+
+            {/* Current file */}
+            {editAsset.fileUrl && !editFile && (
+              <div style={{ display: "flex", alignItems: "center", gap: 8, padding: "10px 14px", background: BG, borderRadius: 8, border: `1px solid ${BORDER}` }}>
+                <span style={{ fontSize: 18 }}>{fileIcon(editAsset.fileType)}</span>
+                <div style={{ flex: 1 }}>
+                  <div style={{ fontSize: 13, fontWeight: 600, color: TEXT }}>{editAsset.fileName}</div>
+                  <div style={{ fontSize: 11, color: MUTED }}>{fmtSize(editAsset.fileSize)} — current file</div>
+                </div>
+                <button type="button" onClick={() => editFileRef.current?.click()} style={{ fontSize: 12, color: ACCENT, background: "none", border: `1px solid ${ACCENT}44`, borderRadius: 6, padding: "4px 10px", cursor: "pointer" }}>
+                  Replace
+                </button>
+              </div>
+            )}
+
+            {/* New file selected */}
+            {editFile && (
+              <div style={{ display: "flex", alignItems: "center", gap: 8, padding: "10px 14px", background: "#F0FDF4", borderRadius: 8, border: "1px solid #BBF7D0" }}>
+                <span style={{ fontSize: 18 }}>{fileIcon(editFile.type)}</span>
+                <div style={{ flex: 1 }}>
+                  <div style={{ fontSize: 13, fontWeight: 600, color: TEXT }}>{editFile.name}</div>
+                  <div style={{ fontSize: 11, color: MUTED }}>{fmtSize(editFile.size)} — new file</div>
+                </div>
+                <button type="button" onClick={() => setEditFile(null)} style={{ background: "none", border: "none", color: "#EF4444", cursor: "pointer", fontSize: 16 }}>×</button>
+              </div>
+            )}
+
+            <input ref={editFileRef} type="file" onChange={e => setEditFile(e.target.files[0])} style={{ display: "none" }} />
+
+            {editUploading && (
+              <div>
+                <div style={{ height: 6, background: "#F1EDE8", borderRadius: 4, overflow: "hidden" }}>
+                  <div style={{ height: "100%", width: `${editProgress}%`, background: ACCENT, transition: "width 0.2s" }} />
+                </div>
+                <div style={{ fontSize: 12, color: MUTED, marginTop: 4 }}>{editProgress}% uploading new file</div>
+              </div>
+            )}
+
+            <button type="submit" disabled={saving} style={{ background: ACCENT, color: "#fff", border: "none", borderRadius: 8, padding: "10px", cursor: saving ? "not-allowed" : "pointer", fontWeight: 600, opacity: saving ? 0.7 : 1 }}>
+              {saving ? (editUploading ? `Uploading ${editProgress}%...` : "Saving...") : "Save Changes"}
+            </button>
+          </form>
+        </Modal>
       )}
     </div>
   )
 }
 
-function AssetCard({ asset, onDelete, accent, border, muted }) {
+function AssetCard({ asset, onView, onEdit, onDelete, accent, border, muted }) {
   const [hovered, setHovered] = useState(false)
+
+  // Show image thumbnail on card
+  const isImage = asset.fileType?.startsWith("image/")
+
   return (
     <div onMouseEnter={() => setHovered(true)} onMouseLeave={() => setHovered(false)}
-      style={{ background: "#fff", border: `1px solid ${hovered ? accent : border}`, borderRadius: 12, padding: 20, transition: "all 0.15s", boxShadow: hovered ? "0 4px 16px rgba(168,144,120,0.1)" : "none" }}>
-      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", marginBottom: 12 }}>
-        <span style={{ fontSize: 28 }}>{fileIcon(asset.fileType)}</span>
-        <button onClick={onDelete} style={{ background: "none", border: "none", color: "#CBD5E1", cursor: "pointer", fontSize: 18, padding: 0 }}>×</button>
-      </div>
-      <h3 style={{ fontSize: 15, fontWeight: 700, margin: "0 0 4px", lineHeight: 1.3, wordBreak: "break-word" }}>{asset.name}</h3>
-      <div style={{ fontSize: 11, color: muted, marginBottom: 8 }}>
-        <span style={{ background: accent + "22", color: accent, padding: "1px 8px", borderRadius: 10, fontWeight: 600, marginRight: 6 }}>{asset.category}</span>
-        {asset.fileSize ? fmtSize(asset.fileSize) : ""}
-      </div>
-      {asset.description && <p style={{ fontSize: 12, color: muted, margin: "0 0 10px", lineHeight: 1.4 }}>{asset.description}</p>}
-      {asset.tags?.length > 0 && (
-        <div style={{ display: "flex", gap: 4, flexWrap: "wrap", marginBottom: 12 }}>
-          {asset.tags.slice(0, 3).map(t => <span key={t} style={{ background: "#FAF7F4", color: muted, fontSize: 11, padding: "2px 8px", borderRadius: 10 }}>{t}</span>)}
+      style={{ background: "#fff", border: `1px solid ${hovered ? accent : border}`, borderRadius: 12, overflow: "hidden", transition: "all 0.15s", boxShadow: hovered ? "0 4px 16px rgba(168,144,120,0.1)" : "none" }}>
+
+      {/* Image thumbnail */}
+      {isImage && asset.fileUrl && (
+        <div onClick={onView} style={{ cursor: "pointer", height: 140, overflow: "hidden", background: "#FAF7F4", borderBottom: `1px solid ${border}` }}>
+          <img src={asset.fileUrl} alt={asset.name} style={{ width: "100%", height: "100%", objectFit: "cover" }} />
         </div>
       )}
-      <a href={asset.fileUrl} target="_blank" rel="noreferrer" download={asset.fileName}
-        style={{ display: "block", textAlign: "center", background: accent + "18", color: accent, padding: "7px", borderRadius: 8, fontSize: 13, fontWeight: 600, textDecoration: "none" }}>
-        ↓ Download
-      </a>
+
+      <div style={{ padding: 20 }}>
+        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", marginBottom: 12 }}>
+          {!isImage && <span style={{ fontSize: 28 }}>{fileIcon(asset.fileType)}</span>}
+          {isImage && <span style={{ background: accent + "22", color: accent, fontSize: 11, fontWeight: 700, padding: "2px 8px", borderRadius: 10 }}>{asset.category}</span>}
+          <div style={{ display: "flex", gap: 4 }}>
+            <button onClick={onEdit} title="Edit" style={{ background: "none", border: "none", color: "#CBD5E1", cursor: "pointer", fontSize: 14, padding: "0 2px" }}>✏️</button>
+            <button onClick={onDelete} title="Delete" style={{ background: "none", border: "none", color: "#CBD5E1", cursor: "pointer", fontSize: 18, padding: 0 }}>×</button>
+          </div>
+        </div>
+        <div onClick={onView} style={{ cursor: "pointer" }}>
+          <h3 style={{ fontSize: 15, fontWeight: 700, margin: "0 0 4px", lineHeight: 1.3, wordBreak: "break-word" }}>{asset.name}</h3>
+          <div style={{ fontSize: 11, color: muted, marginBottom: 8 }}>
+            {!isImage && <span style={{ background: accent + "22", color: accent, padding: "1px 8px", borderRadius: 10, fontWeight: 600, marginRight: 6 }}>{asset.category}</span>}
+            {asset.fileSize ? fmtSize(asset.fileSize) : ""}
+          </div>
+          {asset.description && <p style={{ fontSize: 12, color: muted, margin: "0 0 10px", lineHeight: 1.4 }}>{asset.description}</p>}
+          {asset.tags?.length > 0 && (
+            <div style={{ display: "flex", gap: 4, flexWrap: "wrap", marginBottom: 12 }}>
+              {asset.tags.slice(0, 3).map(t => <span key={t} style={{ background: "#FAF7F4", color: muted, fontSize: 11, padding: "2px 8px", borderRadius: 10 }}>{t}</span>)}
+            </div>
+          )}
+        </div>
+        <a href={asset.fileUrl} target="_blank" rel="noreferrer" download={asset.fileName}
+          style={{ display: "block", textAlign: "center", background: accent + "18", color: accent, padding: "7px", borderRadius: 8, fontSize: 13, fontWeight: 600, textDecoration: "none" }}>
+          ↓ Download
+        </a>
+      </div>
+    </div>
+  )
+}
+
+function Modal({ children, onClose, title, accent, wide }) {
+  return (
+    <div style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.4)", display: "flex", alignItems: "center", justifyContent: "center", zIndex: 1000, padding: 20 }}>
+      <div style={{ background: "#fff", borderRadius: 16, padding: 32, width: "100%", maxWidth: wide ? 700 : 520, maxHeight: "90vh", overflowY: "auto" }}>
+        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 24 }}>
+          <h2 style={{ margin: 0, fontSize: 22, fontWeight: 700 }}>{title}</h2>
+          <button onClick={onClose} style={{ background: "none", border: "none", fontSize: 24, cursor: "pointer", color: "#94A3B8" }}>×</button>
+        </div>
+        {children}
+      </div>
     </div>
   )
 }
