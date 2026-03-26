@@ -16,6 +16,7 @@ import TagInput from "../components/TagInput"
 import TagFilter from "../components/TagFilter"
 import KanbanBoard from "../components/KanbanBoard"
 import ViewToggle from "../components/ViewToggle"
+import MarkdownRenderer from "../components/MarkdownRenderer"
 
 const ACCENT = "#A89078"
 const BG = "#FAF7F4"
@@ -454,7 +455,11 @@ export default function Vault({ user }) {
               {viewAsset.fileSize ? <span style={{ fontSize: 12, color: MUTED }}>{fmtSize(viewAsset.fileSize)}</span> : null}
               {(viewAsset.tags || []).map(t => <span key={t} style={{ background: "#F5F0EB", color: MUTED, padding: "2px 10px", borderRadius: 12, fontSize: 12 }}>{t}</span>)}
             </div>
-            {viewAsset.description && <p style={{ color: MUTED, marginBottom: 20, fontSize: 14 }}>{viewAsset.description}</p>}
+            {viewAsset.description && (
+              <div style={{ marginBottom: 20 }}>
+                <MarkdownRenderer content={viewAsset.description} accentColor={ACCENT} />
+              </div>
+            )}
 
             {/* File preview */}
             <FilePreview fileUrl={viewAsset.fileUrl} fileType={viewAsset.fileType} fileName={viewAsset.fileName} />

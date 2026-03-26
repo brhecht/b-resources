@@ -16,6 +16,7 @@ import TagInput from "../components/TagInput"
 import TagFilter from "../components/TagFilter"
 import KanbanBoard from "../components/KanbanBoard"
 import ViewToggle from "../components/ViewToggle"
+import MarkdownRenderer from "../components/MarkdownRenderer"
 
 const ACCENT = "#7B8FA8"
 const BG = "#F6F8FA"
@@ -480,9 +481,9 @@ export default function Library({ user }) {
               </a>
             )}
             {viewDoc.content && (
-              <pre style={{ background: BG, padding: 20, borderRadius: 8, fontSize: 13, lineHeight: 1.7, whiteSpace: "pre-wrap", wordBreak: "break-word", maxHeight: 400, overflowY: "auto" }}>
-                {viewDoc.content}
-              </pre>
+              <div style={{ background: BG, padding: 20, borderRadius: 8, maxHeight: 400, overflowY: "auto" }}>
+                <MarkdownRenderer content={viewDoc.content} accentColor={ACCENT} />
+              </div>
             )}
             {!viewDoc.content && !viewDoc.fileUrl && (
               <p style={{ color: MUTED, fontStyle: "italic" }}>No content.</p>
