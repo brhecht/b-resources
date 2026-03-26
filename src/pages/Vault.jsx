@@ -13,6 +13,7 @@ import {
   where,
 } from "firebase/firestore"
 import { ref, uploadBytesResumable, getDownloadURL, deleteObject } from "firebase/storage"
+import { CollapsibleComments } from "../components/CommentSection"
 import TagInput from "../components/TagInput"
 import TagFilter from "../components/TagFilter"
 import ViewSwitcher from "../components/ViewSwitcher"
@@ -599,6 +600,7 @@ export default function Vault({ user }) {
                 {fileIcon(viewAsset.fileType)} Download {viewAsset.fileName || "file"}
               </a>
             )}
+            <CollapsibleComments collectionName="vault" docId={viewAsset.id} user={user} resourceTitle={viewAsset.name} accentColor={ACCENT} />
             <div style={{ display: "flex", gap: 10, marginTop: 20 }}>
               <button onClick={() => openEdit(viewAsset)} style={{ background: ACCENT + "18", color: ACCENT, border: `1px solid ${ACCENT}44`, borderRadius: 8, padding: "8px 16px", cursor: "pointer", fontSize: 13, fontWeight: 600 }}>✏️ Edit</button>
               <button onClick={() => handlePin(viewAsset)} style={{ background: viewAsset.pinned ? "#FEF3C7" : "#F9FAFB", color: viewAsset.pinned ? "#D97706" : MUTED, border: `1px solid ${viewAsset.pinned ? "#FDE68A" : BORDER}`, borderRadius: 8, padding: "8px 16px", cursor: "pointer", fontSize: 13 }}>
