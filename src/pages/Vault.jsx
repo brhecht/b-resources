@@ -10,14 +10,17 @@ import {
   updateDoc,
   doc,
   serverTimestamp,
+  where,
 } from "firebase/firestore"
 import { ref, uploadBytesResumable, getDownloadURL, deleteObject } from "firebase/storage"
 import TagInput from "../components/TagInput"
 import TagFilter from "../components/TagFilter"
-import KanbanBoard from "../components/KanbanBoard"
-import ViewToggle from "../components/ViewToggle"
+import ViewSwitcher from "../components/ViewSwitcher"
+import GroupKanban from "../components/GroupKanban"
+import GroupManager from "../components/GroupManager"
+import ListView from "../components/ListView"
+import ResourceCard from "../components/ResourceCard"
 import MarkdownRenderer from "../components/MarkdownRenderer"
-import { CollapsibleComments } from "../components/CommentSection"
 
 const ACCENT = "#A89078"
 const BG = "#FAF7F4"
@@ -25,7 +28,13 @@ const CARD_BG = "#FFFFFF"
 const TEXT = "#1A1A2E"
 const MUTED = "#8A7A6E"
 const BORDER = "#EDE8E2"
-const CATEGORIES = ["All", "Brand", "Template", "Credentials", "Document"]
+
+const DEFAULT_GROUPS = [
+  { name: "Brand", color: "#A89078", icon: "🎨", order: 0 },
+  { name: "Templates", color: "#7BA3A8", icon: "📐", order: 1 },
+  { name: "Legal", color: "#8B8B8B", icon: "⚖️", order: 2 },
+  { name: "Media", color: "#C47A9B", icon: "🖼️", order: 3 },
+]
 
 function fileIcon(type) {
   if (!type) return "📄"
@@ -48,7 +57,6 @@ function fmtSize(bytes) {
 
 function FilePreview({ fileUrl, fileType, fileName }) {
   if (!fileUrl) return null
-
   if (fileType?.startsWith("image/")) {
     return (
       <div style={{ marginBottom: 20, borderRadius: 10, overflow: "hidden", border: `1px solid ${BORDER}` }}>
@@ -56,7 +64,6 @@ function FilePreview({ fileUrl, fileType, fileName }) {
       </div>
     )
   }
-
   if (fileType === "application/pdf") {
     return (
       <div style={{ marginBottom: 20, borderRadius: 10, overflow: "hidden", border: `1px solid ${BORDER}` }}>
@@ -64,7 +71,6 @@ function FilePreview({ fileUrl, fileType, fileName }) {
       </div>
     )
   }
-
   if (fileType?.startsWith("video/")) {
     return (
       <div style={{ marginBottom: 20, borderRadius: 10, overflow: "hidden", border: `1px solid ${BORDER}` }}>
@@ -72,7 +78,6 @@ function FilePreview({ fileUrl, fileType, fileName }) {
       </div>
     )
   }
-
   if (fileType?.startsWith("audio/")) {
     return (
       <div style={{ marginBottom: 20, padding: 20, background: "#FAF7F4", borderRadius: 10, border: `1px solid ${BORDER}` }}>
@@ -80,30 +85,31 @@ function FilePreview({ fileUrl, fileType, fileName }) {
       </div>
     )
   }
-
   return null
 }
 
 export default function Vault({ user }) {
   const [assets, setAssets] = useState([])
+  const [groups, setGroups] = useState([])
   const [loading, setLoading] = useState(true)
   const [search, setSearch] = useState("")
-  const [activeCategory, setActiveCategory] = useState("All")
   const [showAdd, setShowAdd] = useState(false)
   const [viewAsset, setViewAsset] = useState(null)
   const [editAsset, setEditAsset] = useState(null)
-  const [view, setView] = useState("grid")
+  const [view, setView] = useState("group")
   const [activeTags, setActiveTags] = useState([])
-  const [form, setForm] = useState({ name: "", category: "Brand", description: "", tags: [], status: "Active", priority: 0 })
-  const [editForm, setEditForm] = useState({ name: "", category: "Brand", description: "", tags: [], status: "Active", priority: 0 })
+  const [form, setForm] = useState({ name: "", description: "", tags: [], groupId: "", subGroupId: "" })
+  const [editForm, setEditForm] = useState({ name: "", description: "", tags: [], groupId: "", subGroupId: "" })
   const [file, setFile] = useState(null)
   const [progress, setProgress] = useState(0)
   const [uploading, setUploading] = useState(false)
   const [saving, setSaving] = useState(false)
   const [dragOver, setDragOver] = useState(false)
   const fileRef = useRef()
+  const [showGroupManager, setShowGroupManager] = useState(false)
+  const [editingGroup, setEditingGroup] = useState(null)
+  const [addToGroupId, setAddToGroupId] = useState(null)
 
-  // Edit file state
   const [editFile, setEditFile] = useState(null)
   const [editProgress, setEditProgress] = useState(0)
   const [editUploading, setEditUploading] = useState(false)
@@ -115,7 +121,15 @@ export default function Vault({ user }) {
     return [...set].sort()
   }, [assets])
 
-  useEffect(() => { loadAssets() }, [])
+  const groupMap = useMemo(() => {
+    const m = {}
+    groups.forEach(g => { m[g.id] = g })
+    return m
+  }, [groups])
+
+  const topGroups = useMemo(() => groups.filter(g => !g.parentId), [groups])
+
+  useEffect(() => { loadAssets(); loadGroups() }, [])
 
   async function loadAssets() {
     setLoading(true)
@@ -125,11 +139,111 @@ export default function Vault({ user }) {
       setAssets(snap.docs.map(d => ({ id: d.id, ...d.data() })))
     } catch (e) {
       console.error("Vault loadAssets error:", e)
-      if (e?.code === "permission-denied") {
-        alert("Permission denied loading vault. Check Firestore rules.")
-      }
+      if (e?.code === "permission-denied") alert("Permission denied loading vault. Check Firestore rules.")
     }
     setLoading(false)
+  }
+
+  async function loadGroups() {
+    try {
+      const q = query(collection(db, "groups"), where("collection", "==", "vault"), orderBy("order", "asc"))
+      const snap = await getDocs(q)
+      let loaded = snap.docs.map(d => ({ id: d.id, ...d.data() }))
+      if (loaded.filter(g => !g.parentId).length === 0) {
+        loaded = await seedDefaultGroups()
+      }
+      setGroups(loaded)
+    } catch (e) {
+      console.error("Load groups error:", e)
+      try {
+        const q2 = query(collection(db, "groups"), where("collection", "==", "vault"))
+        const snap2 = await getDocs(q2)
+        let loaded2 = snap2.docs.map(d => ({ id: d.id, ...d.data() }))
+        if (loaded2.filter(g => !g.parentId).length === 0) {
+          loaded2 = await seedDefaultGroups()
+        }
+        setGroups(loaded2)
+      } catch (e2) {
+        console.error("Fallback load groups error:", e2)
+      }
+    }
+  }
+
+  async function seedDefaultGroups() {
+    const created = []
+    for (const g of DEFAULT_GROUPS) {
+      const docRef = await addDoc(collection(db, "groups"), {
+        ...g,
+        parentId: null,
+        collection: "vault",
+        createdAt: serverTimestamp(),
+      })
+      created.push({ id: docRef.id, ...g, parentId: null, collection: "vault" })
+    }
+    return created
+  }
+
+  async function handleSaveGroup(data) {
+    try {
+      if (editingGroup?.id) {
+        await updateDoc(doc(db, "groups", editingGroup.id), { ...data, updatedAt: serverTimestamp() })
+      } else {
+        const order = groups.filter(g => !g.parentId).length
+        await addDoc(collection(db, "groups"), { ...data, order, createdAt: serverTimestamp() })
+      }
+      await loadGroups()
+      setShowGroupManager(false)
+      setEditingGroup(null)
+    } catch (e) {
+      console.error("Save group error:", e)
+      alert("Failed to save group: " + (e?.message || ""))
+    }
+  }
+
+  async function handleDeleteGroup(groupId) {
+    if (!window.confirm("Delete this group? Items will become ungrouped.")) return
+    try {
+      const subs = groups.filter(g => g.parentId === groupId)
+      for (const sub of subs) { await deleteDoc(doc(db, "groups", sub.id)) }
+      await deleteDoc(doc(db, "groups", groupId))
+      const affected = assets.filter(a => a.groupId === groupId)
+      for (const a of affected) {
+        await updateDoc(doc(db, "vault", a.id), { groupId: null, subGroupId: null, updatedAt: serverTimestamp() })
+      }
+      setAssets(prev => prev.map(a => a.groupId === groupId ? { ...a, groupId: null, subGroupId: null } : a))
+      await loadGroups()
+      setShowGroupManager(false)
+      setEditingGroup(null)
+    } catch (e) {
+      console.error("Delete group error:", e)
+    }
+  }
+
+  async function handleGroupChange(itemId, newGroupId, newSubGroupId) {
+    try {
+      const updates = { groupId: newGroupId || null, subGroupId: newSubGroupId || null, updatedAt: serverTimestamp() }
+      await updateDoc(doc(db, "vault", itemId), updates)
+      setAssets(prev => prev.map(a => a.id === itemId ? { ...a, ...updates } : a))
+    } catch (e) {
+      console.error("Group change error:", e)
+    }
+  }
+
+  async function handlePin(item) {
+    const newPinned = !item.pinned
+    try {
+      await updateDoc(doc(db, "vault", item.id), { pinned: newPinned, updatedAt: serverTimestamp() })
+      setAssets(prev => prev.map(a => a.id === item.id ? { ...a, pinned: newPinned } : a))
+    } catch (e) {
+      console.error("Pin error:", e)
+    }
+  }
+
+  function handleDrop(e) {
+    e.preventDefault()
+    setDragOver(false)
+    const dropped = e.dataTransfer.files[0]
+    if (dropped) setFile(dropped)
   }
 
   async function handleUpload(e) {
@@ -143,20 +257,17 @@ export default function Vault({ user }) {
       const storageRef = ref(storage, storagePath)
       const task = uploadBytesResumable(storageRef, file)
       await new Promise((resolve, reject) => {
-        task.on("state_changed",
-          snap => setProgress(Math.round((snap.bytesTransferred / snap.totalBytes) * 100)),
-          reject,
-          resolve
-        )
+        task.on("state_changed", snap => setProgress(Math.round((snap.bytesTransferred / snap.totalBytes) * 100)), reject, resolve)
       })
       const fileUrl = await getDownloadURL(storageRef)
       const newAsset = {
         name: form.name || file.name,
-        category: form.category,
         description: form.description,
         tags: form.tags,
-        status: form.status,
-        priority: form.priority,
+        groupId: form.groupId || null,
+        subGroupId: form.subGroupId || null,
+        pinned: false,
+        category: groupMap[form.groupId]?.name || "",
         fileUrl,
         fileName: file.name,
         fileSize: file.size,
@@ -167,16 +278,18 @@ export default function Vault({ user }) {
         updatedAt: serverTimestamp(),
       }
       const docRef = await addDoc(collection(db, "vault"), newAsset)
-      // Optimistic: add to local state immediately so item always appears
       setAssets(prev => [{ id: docRef.id, ...newAsset, createdAt: new Date() }, ...prev])
-      setForm({ name: "", category: "Brand", description: "", tags: [], status: "Active", priority: 0 })
+      setForm({ name: "", description: "", tags: [], groupId: "", subGroupId: "" })
       setFile(null)
       if (fileRef.current) fileRef.current.value = ""
       setShowAdd(false)
+      setAddToGroupId(null)
       setProgress(0)
-      // Refresh in background to sync server timestamps
       loadAssets().catch(() => {})
-    } catch (e) { console.error("Vault upload error:", e); alert("Upload failed: " + (e?.message || e?.code || "Unknown error")) }
+    } catch (e) {
+      console.error("Vault upload error:", e)
+      alert("Upload failed: " + (e?.message || e?.code || "Unknown error"))
+    }
     setUploading(false)
     setSaving(false)
   }
@@ -185,11 +298,10 @@ export default function Vault({ user }) {
     setEditAsset(asset)
     setEditForm({
       name: asset.name || "",
-      category: asset.category || "Brand",
       description: asset.description || "",
       tags: asset.tags || [],
-      status: asset.status || "Active",
-      priority: asset.priority || 0,
+      groupId: asset.groupId || "",
+      subGroupId: asset.subGroupId || "",
     })
     setEditFile(null)
     setEditProgress(0)
@@ -205,11 +317,11 @@ export default function Vault({ user }) {
     try {
       const updates = {
         name: editForm.name,
-        category: editForm.category,
         description: editForm.description,
         tags: editForm.tags,
-        status: editForm.status,
-        priority: editForm.priority,
+        groupId: editForm.groupId || null,
+        subGroupId: editForm.subGroupId || null,
+        category: groupMap[editForm.groupId]?.name || editAsset.category || "",
         updatedAt: serverTimestamp(),
       }
 
@@ -222,11 +334,7 @@ export default function Vault({ user }) {
         const storageRef = ref(storage, storagePath)
         const task = uploadBytesResumable(storageRef, editFile)
         await new Promise((resolve, reject) => {
-          task.on("state_changed",
-            snap => setEditProgress(Math.round((snap.bytesTransferred / snap.totalBytes) * 100)),
-            reject,
-            resolve
-          )
+          task.on("state_changed", snap => setEditProgress(Math.round((snap.bytesTransferred / snap.totalBytes) * 100)), reject, resolve)
         })
         updates.fileUrl = await getDownloadURL(storageRef)
         updates.fileName = editFile.name
@@ -237,7 +345,6 @@ export default function Vault({ user }) {
       }
 
       await updateDoc(doc(db, "vault", editAsset.id), updates)
-      // Optimistic: update local state immediately
       setAssets(prev => prev.map(a => a.id === editAsset.id ? { ...a, ...updates } : a))
       setEditAsset(null)
       setEditFile(null)
@@ -253,10 +360,7 @@ export default function Vault({ user }) {
   async function handleDelete(asset) {
     if (!window.confirm(`Delete "${asset.name}"?`)) return
     try {
-      if (asset.storagePath) {
-        const storageRef = ref(storage, asset.storagePath)
-        await deleteObject(storageRef)
-      }
+      if (asset.storagePath) await deleteObject(ref(storage, asset.storagePath))
       await deleteDoc(doc(db, "vault", asset.id))
       setAssets(prev => prev.filter(a => a.id !== asset.id))
       if (viewAsset?.id === asset.id) setViewAsset(null)
@@ -264,63 +368,70 @@ export default function Vault({ user }) {
     } catch (e) { console.error(e) }
   }
 
-  function handleDrop(e) {
-    e.preventDefault()
-    setDragOver(false)
-    const dropped = e.dataTransfer.files[0]
-    if (dropped) setFile(dropped)
-  }
-
-  function handleDragOver(e) {
-    e.preventDefault()
-    setDragOver(true)
-  }
-
-  function handleDragLeave() {
-    setDragOver(false)
-  }
-
   const filtered = assets.filter(a => {
-    const matchCat = activeCategory === "All" || a.category === activeCategory
     const matchSearch = !search ||
       a.name?.toLowerCase().includes(search.toLowerCase()) ||
       a.description?.toLowerCase().includes(search.toLowerCase()) ||
       a.fileName?.toLowerCase().includes(search.toLowerCase()) ||
       (a.tags || []).some(t => t.toLowerCase().includes(search.toLowerCase()))
     const matchTags = activeTags.length === 0 || activeTags.some(t => (a.tags || []).includes(t))
-    return matchCat && matchSearch && matchTags
+    return matchSearch && matchTags
   })
+
+  const subGroupsFor = (groupId) => groups.filter(g => g.parentId === groupId)
+
+  function GroupSelect({ value, onChange, subValue, onSubChange }) {
+    const subs = value ? subGroupsFor(value) : []
+    return (
+      <>
+        <div>
+          <label style={{ fontSize: 12, color: MUTED, marginBottom: 4, display: "block" }}>Group</label>
+          <select value={value || ""} onChange={e => { onChange(e.target.value); if (onSubChange) onSubChange("") }} style={iStyle}>
+            <option value="">No group</option>
+            {topGroups.map(g => (
+              <option key={g.id} value={g.id}>{g.icon} {g.name}</option>
+            ))}
+          </select>
+        </div>
+        {subs.length > 0 && (
+          <div>
+            <label style={{ fontSize: 12, color: MUTED, marginBottom: 4, display: "block" }}>Sub-group</label>
+            <select value={subValue || ""} onChange={e => onSubChange(e.target.value)} style={iStyle}>
+              <option value="">None</option>
+              {subs.map(s => (
+                <option key={s.id} value={s.id}>{s.icon} {s.name}</option>
+              ))}
+            </select>
+          </div>
+        )}
+      </>
+    )
+  }
 
   return (
     <div style={{ minHeight: "100vh", background: BG, fontFamily: "system-ui, sans-serif", color: TEXT }}>
       <div style={{ background: CARD_BG, borderBottom: `1px solid ${BORDER}`, padding: "0 32px" }}>
-        <div style={{ maxWidth: 1100, margin: "0 auto", display: "flex", alignItems: "center", justifyContent: "space-between", height: 64 }}>
+        <div style={{ maxWidth: 1200, margin: "0 auto", display: "flex", alignItems: "center", justifyContent: "space-between", height: 64 }}>
           <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
             <a href="/" style={{ color: MUTED, textDecoration: "none", fontSize: 13 }}>← Home</a>
             <span style={{ color: BORDER }}>|</span>
             <span style={{ fontSize: 20, fontWeight: 700, color: TEXT }}>Vault</span>
           </div>
           <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
-            <ViewToggle view={view} onToggle={setView} accentColor={ACCENT} />
-            <button onClick={() => setShowAdd(true)} style={{ background: ACCENT, color: "#fff", border: "none", borderRadius: 8, padding: "8px 20px", cursor: "pointer", fontSize: 14, fontWeight: 600 }}>
+            <ViewSwitcher view={view} onSwitch={setView} accentColor={ACCENT} />
+            <button onClick={() => { setShowGroupManager(true); setEditingGroup(null) }} style={{ background: ACCENT + "18", color: ACCENT, border: `1px solid ${ACCENT}44`, borderRadius: 8, padding: "7px 14px", cursor: "pointer", fontSize: 13, fontWeight: 600 }}>
+              Manage Groups
+            </button>
+            <button onClick={() => { setShowAdd(true); setAddToGroupId(null) }} style={{ background: ACCENT, color: "#fff", border: "none", borderRadius: 8, padding: "8px 20px", cursor: "pointer", fontSize: 14, fontWeight: 600 }}>
               + Upload Asset
             </button>
           </div>
         </div>
       </div>
 
-      <div style={{ maxWidth: 1100, margin: "0 auto", padding: "32px" }}>
+      <div style={{ maxWidth: 1200, margin: "0 auto", padding: "32px" }}>
         <input type="text" placeholder="Search assets..." value={search} onChange={e => setSearch(e.target.value)}
           style={{ width: "100%", padding: "10px 16px", border: `1px solid ${BORDER}`, borderRadius: 8, fontSize: 14, background: CARD_BG, boxSizing: "border-box", marginBottom: 20, outline: "none" }} />
-
-        <div style={{ display: "flex", gap: 8, marginBottom: 12, flexWrap: "wrap" }}>
-          {CATEGORIES.map(cat => (
-            <button key={cat} onClick={() => setActiveCategory(cat)}
-              style={{ padding: "6px 16px", borderRadius: 20, border: `1.5px solid ${activeCategory === cat ? ACCENT : BORDER}`, background: activeCategory === cat ? ACCENT : CARD_BG, color: activeCategory === cat ? "#fff" : MUTED, cursor: "pointer", fontSize: 13, fontWeight: 500 }}>
-              {cat}
-            </button>
-          ))}
-        </div>
 
         <TagFilter
           allTags={allTags}
@@ -334,64 +445,88 @@ export default function Vault({ user }) {
           <div style={{ textAlign: "center", color: MUTED, padding: 60 }}>Loading...</div>
         ) : filtered.length === 0 ? (
           <div style={{ textAlign: "center", color: MUTED, padding: 60 }}>No assets found.</div>
-        ) : view === "kanban" ? (
-          <KanbanBoard
+        ) : view === "group" ? (
+          <GroupKanban
             items={filtered}
-            onStatusChange={async (id, newStatus) => {
-              await updateDoc(doc(db, "vault", id), { status: newStatus, updatedAt: serverTimestamp() })
-              setAssets(prev => prev.map(a => a.id === id ? { ...a, status: newStatus } : a))
+            groups={groups}
+            onGroupChange={handleGroupChange}
+            onView={item => setViewAsset(item)}
+            onEdit={item => openEdit(item)}
+            onDelete={item => handleDelete(item)}
+            onPin={item => handlePin(item)}
+            onAddToGroup={groupId => { setAddToGroupId(groupId); setForm(f => ({ ...f, groupId })); setShowAdd(true) }}
+            onEditGroup={group => {
+              if (group._delete) { handleDeleteGroup(group.id) } else { setEditingGroup(group); setShowGroupManager(true) }
             }}
-            renderCard={item => (
-              <div style={{ background: CARD_BG, border: `1px solid ${BORDER}`, borderRadius: 10, padding: 14 }}>
-                <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 6 }}>
-                  <span style={{ fontSize: 20 }}>{fileIcon(item.fileType)}</span>
-                  <span style={{ fontSize: 14, fontWeight: 600, color: TEXT, flex: 1, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{item.name}</span>
-                </div>
-                <div style={{ fontSize: 11, color: MUTED, marginBottom: 6 }}>
-                  <span style={{ background: ACCENT + "22", color: ACCENT, padding: "1px 8px", borderRadius: 10, fontWeight: 600 }}>{item.category}</span>
-                </div>
-                {item.tags?.length > 0 && (
-                  <div style={{ display: "flex", gap: 4, flexWrap: "wrap" }}>
-                    {item.tags.slice(0, 3).map(t => <span key={t} style={{ background: "#FAF7F4", color: MUTED, fontSize: 11, padding: "2px 8px", borderRadius: 10 }}>{t}</span>)}
-                  </div>
-                )}
+            onAddGroup={() => { setEditingGroup(null); setShowGroupManager(true) }}
+            onAddSubGroup={parentId => { setEditingGroup({ parentId }); setShowGroupManager(true) }}
+            accentColor={ACCENT}
+            borderColor={BORDER}
+            mutedColor={MUTED}
+          />
+        ) : view === "pinned" ? (
+          <div>
+            <h3 style={{ fontSize: 16, fontWeight: 600, color: MUTED, marginBottom: 16 }}>Pinned Assets</h3>
+            {filtered.filter(a => a.pinned).length === 0 ? (
+              <div style={{ textAlign: "center", color: MUTED, padding: 40, fontSize: 14 }}>No pinned items. Click the star on any asset to pin it.</div>
+            ) : (
+              <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(280px, 1fr))", gap: 18 }}>
+                {filtered.filter(a => a.pinned).map(a => (
+                  <ResourceCard key={a.id} item={a} group={groupMap[a.groupId]} onView={() => setViewAsset(a)} onEdit={() => openEdit(a)} onDelete={() => handleDelete(a)} onPin={() => handlePin(a)} accentColor={ACCENT} borderColor={BORDER} mutedColor={MUTED} />
+                ))}
               </div>
             )}
+          </div>
+        ) : view === "list" ? (
+          <ListView
+            items={filtered}
+            groups={groups}
+            onView={item => setViewAsset(item)}
+            onEdit={item => openEdit(item)}
+            onDelete={item => handleDelete(item)}
+            onPin={item => handlePin(item)}
             accentColor={ACCENT}
+            borderColor={BORDER}
+            mutedColor={MUTED}
           />
         ) : (
           <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(280px, 1fr))", gap: 18 }}>
             {filtered.map(a => (
-              <AssetCard key={a.id} asset={a}
-                onView={() => setViewAsset(a)}
-                onEdit={() => openEdit(a)}
-                onDelete={() => handleDelete(a)}
-                accent={ACCENT} border={BORDER} muted={MUTED}
-              />
+              <ResourceCard key={a.id} item={a} group={groupMap[a.groupId]} onView={() => setViewAsset(a)} onEdit={() => openEdit(a)} onDelete={() => handleDelete(a)} onPin={() => handlePin(a)} accentColor={ACCENT} borderColor={BORDER} mutedColor={MUTED} />
             ))}
           </div>
         )}
       </div>
 
-      {/* ── ADD MODAL ── */}
+      {/* GROUP MANAGER */}
+      {showGroupManager && (
+        <GroupManager
+          group={editingGroup}
+          groups={groups}
+          collectionName="vault"
+          onSave={handleSaveGroup}
+          onDelete={handleDeleteGroup}
+          onClose={() => { setShowGroupManager(false); setEditingGroup(null) }}
+          accentColor={ACCENT}
+        />
+      )}
+
+      {/* ADD MODAL */}
       {showAdd && (
-        <Modal onClose={() => { setShowAdd(false); setFile(null); if (fileRef.current) fileRef.current.value = "" }} title="Upload Asset" accent={ACCENT}>
+        <Modal onClose={() => { setShowAdd(false); setFile(null); if (fileRef.current) fileRef.current.value = ""; setAddToGroupId(null) }} title="Upload Asset" accent={ACCENT}>
           <form onSubmit={handleUpload} style={{ display: "flex", flexDirection: "column", gap: 14 }}>
             <input ref={fileRef} type="file" onChange={e => setFile(e.target.files[0])} style={{ display: "none" }} />
             <div
               onClick={() => !uploading && fileRef.current?.click()}
               onDrop={handleDrop}
-              onDragOver={handleDragOver}
-              onDragLeave={handleDragLeave}
+              onDragOver={e => { e.preventDefault(); setDragOver(true) }}
+              onDragLeave={() => setDragOver(false)}
               style={{
                 border: `2px dashed ${dragOver ? ACCENT : file ? ACCENT : BORDER}`,
-                borderRadius: 12,
-                padding: "28px 20px",
-                textAlign: "center",
+                borderRadius: 12, padding: "28px 20px", textAlign: "center",
                 cursor: uploading ? "not-allowed" : "pointer",
                 background: dragOver ? ACCENT + "0D" : file ? ACCENT + "0A" : BG,
-                transition: "all 0.15s",
-                userSelect: "none",
+                transition: "all 0.15s", userSelect: "none",
               }}
             >
               {file ? (
@@ -400,9 +535,7 @@ export default function Vault({ user }) {
                   <div style={{ fontSize: 14, fontWeight: 600, color: TEXT, marginBottom: 4, wordBreak: "break-word" }}>{file.name}</div>
                   <div style={{ fontSize: 12, color: MUTED, marginBottom: 10 }}>{fmtSize(file.size)}</div>
                   <button type="button" onClick={e => { e.stopPropagation(); setFile(null); if (fileRef.current) fileRef.current.value = "" }}
-                    style={{ fontSize: 12, color: MUTED, background: "none", border: `1px solid ${BORDER}`, borderRadius: 6, padding: "4px 12px", cursor: "pointer" }}>
-                    Change file
-                  </button>
+                    style={{ fontSize: 12, color: MUTED, background: "none", border: `1px solid ${BORDER}`, borderRadius: 6, padding: "4px 12px", cursor: "pointer" }}>Change file</button>
                 </>
               ) : (
                 <>
@@ -416,22 +549,15 @@ export default function Vault({ user }) {
             </div>
 
             <input placeholder="Name (defaults to filename)" value={form.name} onChange={e => setForm(f => ({ ...f, name: e.target.value }))} style={iStyle} />
-            <select value={form.category} onChange={e => setForm(f => ({ ...f, category: e.target.value }))} style={iStyle}>
-              {CATEGORIES.filter(c => c !== "All").map(c => <option key={c}>{c}</option>)}
-            </select>
+            <GroupSelect
+              value={form.groupId}
+              onChange={v => setForm(f => ({ ...f, groupId: v }))}
+              subValue={form.subGroupId}
+              onSubChange={v => setForm(f => ({ ...f, subGroupId: v }))}
+            />
             <input placeholder="Description" value={form.description} onChange={e => setForm(f => ({ ...f, description: e.target.value }))} style={iStyle} />
             <TagInput tags={form.tags} onChange={tags => setForm(f => ({ ...f, tags }))} allTags={allTags} accentColor={ACCENT} />
-            <select value={form.status} onChange={e => setForm(f => ({ ...f, status: e.target.value }))} style={iStyle}>
-              <option value="Inbox">Inbox</option>
-              <option value="Active">Active</option>
-              <option value="Archive">Archive</option>
-            </select>
-            <select value={form.priority} onChange={e => setForm(f => ({ ...f, priority: Number(e.target.value) }))} style={iStyle}>
-              <option value={0}>Priority: None</option>
-              <option value={1}>Priority: Low</option>
-              <option value={2}>Priority: Medium</option>
-              <option value={3}>Priority: High</option>
-            </select>
+
             {uploading && (
               <div>
                 <div style={{ height: 6, background: "#F1EDE8", borderRadius: 4, overflow: "hidden" }}>
@@ -447,72 +573,57 @@ export default function Vault({ user }) {
         </Modal>
       )}
 
-      {/* ── VIEW MODAL with preview ── */}
+      {/* VIEW MODAL */}
       {viewAsset && (
         <Modal onClose={() => setViewAsset(null)} title={viewAsset.name} accent={ACCENT} wide>
           <div>
             <div style={{ display: "flex", gap: 8, marginBottom: 16, flexWrap: "wrap", alignItems: "center" }}>
-              <span style={{ background: ACCENT + "22", color: ACCENT, padding: "2px 10px", borderRadius: 12, fontSize: 12, fontWeight: 600 }}>{viewAsset.category}</span>
+              {groupMap[viewAsset.groupId] && (
+                <span style={{ background: groupMap[viewAsset.groupId].color + "22", color: groupMap[viewAsset.groupId].color, padding: "2px 10px", borderRadius: 12, fontSize: 12, fontWeight: 600 }}>
+                  {groupMap[viewAsset.groupId].icon} {groupMap[viewAsset.groupId].name}
+                </span>
+              )}
               {viewAsset.fileSize ? <span style={{ fontSize: 12, color: MUTED }}>{fmtSize(viewAsset.fileSize)}</span> : null}
               {(viewAsset.tags || []).map(t => <span key={t} style={{ background: "#F5F0EB", color: MUTED, padding: "2px 10px", borderRadius: 12, fontSize: 12 }}>{t}</span>)}
+              {viewAsset.pinned && <span style={{ fontSize: 12, color: "#F59E0B" }}>★ Pinned</span>}
             </div>
             {viewAsset.description && (
               <div style={{ marginBottom: 20 }}>
                 <MarkdownRenderer content={viewAsset.description} accentColor={ACCENT} />
               </div>
             )}
-
-            {/* File preview */}
             <FilePreview fileUrl={viewAsset.fileUrl} fileType={viewAsset.fileType} fileName={viewAsset.fileName} />
-
-            {/* Download link */}
             {viewAsset.fileUrl && (
-              <a
-                href={viewAsset.fileUrl}
-                target="_blank"
-                rel="noopener noreferrer"
-                style={{ display: "inline-flex", alignItems: "center", gap: 6, background: ACCENT + "18", color: ACCENT, padding: "7px 14px", borderRadius: 8, fontSize: 13, fontWeight: 600, textDecoration: "none", marginBottom: 20 }}
-              >
+              <a href={viewAsset.fileUrl} target="_blank" rel="noopener noreferrer"
+                style={{ display: "inline-flex", alignItems: "center", gap: 6, background: ACCENT + "18", color: ACCENT, padding: "7px 14px", borderRadius: 8, fontSize: 13, fontWeight: 600, textDecoration: "none", marginBottom: 20 }}>
                 {fileIcon(viewAsset.fileType)} Download {viewAsset.fileName || "file"}
               </a>
             )}
-
             <div style={{ display: "flex", gap: 10, marginTop: 20 }}>
-              <button onClick={() => openEdit(viewAsset)} style={{ background: ACCENT + "18", color: ACCENT, border: `1px solid ${ACCENT}44`, borderRadius: 8, padding: "8px 16px", cursor: "pointer", fontSize: 13, fontWeight: 600 }}>
-                ✏️ Edit
+              <button onClick={() => openEdit(viewAsset)} style={{ background: ACCENT + "18", color: ACCENT, border: `1px solid ${ACCENT}44`, borderRadius: 8, padding: "8px 16px", cursor: "pointer", fontSize: 13, fontWeight: 600 }}>✏️ Edit</button>
+              <button onClick={() => handlePin(viewAsset)} style={{ background: viewAsset.pinned ? "#FEF3C7" : "#F9FAFB", color: viewAsset.pinned ? "#D97706" : MUTED, border: `1px solid ${viewAsset.pinned ? "#FDE68A" : BORDER}`, borderRadius: 8, padding: "8px 16px", cursor: "pointer", fontSize: 13 }}>
+                {viewAsset.pinned ? "★ Unpin" : "☆ Pin"}
               </button>
-              <button onClick={() => handleDelete(viewAsset)} style={{ background: "#FEF2F2", color: "#EF4444", border: "1px solid #FECACA", borderRadius: 8, padding: "8px 16px", cursor: "pointer", fontSize: 13 }}>
-                🗑 Delete
-              </button>
+              <button onClick={() => handleDelete(viewAsset)} style={{ background: "#FEF2F2", color: "#EF4444", border: "1px solid #FECACA", borderRadius: 8, padding: "8px 16px", cursor: "pointer", fontSize: 13 }}>🗑 Delete</button>
             </div>
-            <CollapsibleComments collectionName="vault" docId={viewAsset.id} user={user} resourceTitle={viewAsset.name} accentColor={ACCENT} />
           </div>
         </Modal>
       )}
 
-      {/* ── EDIT MODAL ── */}
+      {/* EDIT MODAL */}
       {editAsset && (
         <Modal onClose={() => { setEditAsset(null); setEditFile(null) }} title="Edit Asset" accent={ACCENT}>
           <form onSubmit={handleUpdate} style={{ display: "flex", flexDirection: "column", gap: 14 }}>
             <input required placeholder="Name" value={editForm.name} onChange={e => setEditForm(f => ({ ...f, name: e.target.value }))} style={iStyle} />
-            <select value={editForm.category} onChange={e => setEditForm(f => ({ ...f, category: e.target.value }))} style={iStyle}>
-              {CATEGORIES.filter(c => c !== "All").map(c => <option key={c}>{c}</option>)}
-            </select>
+            <GroupSelect
+              value={editForm.groupId}
+              onChange={v => setEditForm(f => ({ ...f, groupId: v }))}
+              subValue={editForm.subGroupId}
+              onSubChange={v => setEditForm(f => ({ ...f, subGroupId: v }))}
+            />
             <input placeholder="Description" value={editForm.description} onChange={e => setEditForm(f => ({ ...f, description: e.target.value }))} style={iStyle} />
             <TagInput tags={editForm.tags} onChange={tags => setEditForm(f => ({ ...f, tags }))} allTags={allTags} accentColor={ACCENT} />
-            <select value={editForm.status} onChange={e => setEditForm(f => ({ ...f, status: e.target.value }))} style={iStyle}>
-              <option value="Inbox">Inbox</option>
-              <option value="Active">Active</option>
-              <option value="Archive">Archive</option>
-            </select>
-            <select value={editForm.priority} onChange={e => setEditForm(f => ({ ...f, priority: Number(e.target.value) }))} style={iStyle}>
-              <option value={0}>Priority: None</option>
-              <option value={1}>Priority: Low</option>
-              <option value={2}>Priority: Medium</option>
-              <option value={3}>Priority: High</option>
-            </select>
 
-            {/* Current file */}
             {editAsset.fileUrl && !editFile && (
               <div style={{ display: "flex", alignItems: "center", gap: 8, padding: "10px 14px", background: BG, borderRadius: 8, border: `1px solid ${BORDER}` }}>
                 <span style={{ fontSize: 18 }}>{fileIcon(editAsset.fileType)}</span>
@@ -520,13 +631,9 @@ export default function Vault({ user }) {
                   <div style={{ fontSize: 13, fontWeight: 600, color: TEXT }}>{editAsset.fileName}</div>
                   <div style={{ fontSize: 11, color: MUTED }}>{fmtSize(editAsset.fileSize)} — current file</div>
                 </div>
-                <button type="button" onClick={() => editFileRef.current?.click()} style={{ fontSize: 12, color: ACCENT, background: "none", border: `1px solid ${ACCENT}44`, borderRadius: 6, padding: "4px 10px", cursor: "pointer" }}>
-                  Replace
-                </button>
+                <button type="button" onClick={() => editFileRef.current?.click()} style={{ fontSize: 12, color: ACCENT, background: "none", border: `1px solid ${ACCENT}44`, borderRadius: 6, padding: "4px 10px", cursor: "pointer" }}>Replace</button>
               </div>
             )}
-
-            {/* New file selected */}
             {editFile && (
               <div style={{ display: "flex", alignItems: "center", gap: 8, padding: "10px 14px", background: "#F0FDF4", borderRadius: 8, border: "1px solid #BBF7D0" }}>
                 <span style={{ fontSize: 18 }}>{fileIcon(editFile.type)}</span>
@@ -537,7 +644,6 @@ export default function Vault({ user }) {
                 <button type="button" onClick={() => setEditFile(null)} style={{ background: "none", border: "none", color: "#EF4444", cursor: "pointer", fontSize: 16 }}>×</button>
               </div>
             )}
-
             <input ref={editFileRef} type="file" onChange={e => setEditFile(e.target.files[0])} style={{ display: "none" }} />
 
             {editUploading && (
@@ -555,54 +661,6 @@ export default function Vault({ user }) {
           </form>
         </Modal>
       )}
-    </div>
-  )
-}
-
-function AssetCard({ asset, onView, onEdit, onDelete, accent, border, muted }) {
-  const [hovered, setHovered] = useState(false)
-
-  // Show image thumbnail on card
-  const isImage = asset.fileType?.startsWith("image/")
-
-  return (
-    <div onMouseEnter={() => setHovered(true)} onMouseLeave={() => setHovered(false)}
-      style={{ background: "#fff", border: `1px solid ${hovered ? accent : border}`, borderRadius: 12, overflow: "hidden", transition: "all 0.15s", boxShadow: hovered ? "0 4px 16px rgba(168,144,120,0.1)" : "none" }}>
-
-      {/* Image thumbnail */}
-      {isImage && asset.fileUrl && (
-        <div onClick={onView} style={{ cursor: "pointer", height: 140, overflow: "hidden", background: "#FAF7F4", borderBottom: `1px solid ${border}` }}>
-          <img src={asset.fileUrl} alt={asset.name} style={{ width: "100%", height: "100%", objectFit: "cover" }} />
-        </div>
-      )}
-
-      <div style={{ padding: 20 }}>
-        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", marginBottom: 12 }}>
-          {!isImage && <span style={{ fontSize: 28 }}>{fileIcon(asset.fileType)}</span>}
-          {isImage && <span style={{ background: accent + "22", color: accent, fontSize: 11, fontWeight: 700, padding: "2px 8px", borderRadius: 10 }}>{asset.category}</span>}
-          <div style={{ display: "flex", gap: 4 }}>
-            <button onClick={onEdit} title="Edit" style={{ background: "none", border: "none", color: "#CBD5E1", cursor: "pointer", fontSize: 14, padding: "0 2px" }}>✏️</button>
-            <button onClick={onDelete} title="Delete" style={{ background: "none", border: "none", color: "#CBD5E1", cursor: "pointer", fontSize: 18, padding: 0 }}>×</button>
-          </div>
-        </div>
-        <div onClick={onView} style={{ cursor: "pointer" }}>
-          <h3 style={{ fontSize: 15, fontWeight: 700, margin: "0 0 4px", lineHeight: 1.3, wordBreak: "break-word" }}>{asset.name}</h3>
-          <div style={{ fontSize: 11, color: muted, marginBottom: 8 }}>
-            {!isImage && <span style={{ background: accent + "22", color: accent, padding: "1px 8px", borderRadius: 10, fontWeight: 600, marginRight: 6 }}>{asset.category}</span>}
-            {asset.fileSize ? fmtSize(asset.fileSize) : ""}
-          </div>
-          {asset.description && <p style={{ fontSize: 12, color: muted, margin: "0 0 10px", lineHeight: 1.4 }}>{asset.description}</p>}
-          {asset.tags?.length > 0 && (
-            <div style={{ display: "flex", gap: 4, flexWrap: "wrap", marginBottom: 12 }}>
-              {asset.tags.slice(0, 3).map(t => <span key={t} style={{ background: "#FAF7F4", color: muted, fontSize: 11, padding: "2px 8px", borderRadius: 10 }}>{t}</span>)}
-            </div>
-          )}
-        </div>
-        <a href={asset.fileUrl} target="_blank" rel="noreferrer" download={asset.fileName}
-          style={{ display: "block", textAlign: "center", background: accent + "18", color: accent, padding: "7px", borderRadius: 8, fontSize: 13, fontWeight: 600, textDecoration: "none" }}>
-          ↓ Download
-        </a>
-      </div>
     </div>
   )
 }

@@ -10,14 +10,17 @@ import {
   updateDoc,
   doc,
   serverTimestamp,
+  where,
 } from "firebase/firestore"
 import { ref, uploadBytesResumable, getDownloadURL, deleteObject } from "firebase/storage"
 import TagInput from "../components/TagInput"
 import TagFilter from "../components/TagFilter"
-import KanbanBoard from "../components/KanbanBoard"
-import ViewToggle from "../components/ViewToggle"
+import ViewSwitcher from "../components/ViewSwitcher"
+import GroupKanban from "../components/GroupKanban"
+import GroupManager from "../components/GroupManager"
+import ListView from "../components/ListView"
+import ResourceCard from "../components/ResourceCard"
 import MarkdownRenderer from "../components/MarkdownRenderer"
-import { CollapsibleComments } from "../components/CommentSection"
 
 const ACCENT = "#7B8FA8"
 const BG = "#F6F8FA"
@@ -25,7 +28,14 @@ const CARD_BG = "#FFFFFF"
 const TEXT = "#1A1A2E"
 const MUTED = "#6B7A99"
 const BORDER = "#E2E8F0"
-const CATEGORIES = ["All", "Framework", "Playbook", "SOP", "Reference"]
+
+const DEFAULT_GROUPS = [
+  { name: "Frameworks", color: "#7B8FA8", icon: "🧩", order: 0 },
+  { name: "Playbooks", color: "#6BA37E", icon: "📗", order: 1 },
+  { name: "SOPs", color: "#E8913A", icon: "📋", order: 2 },
+  { name: "Reference", color: "#9B8EC4", icon: "📚", order: 3 },
+  { name: "Templates", color: "#E57373", icon: "📄", order: 4 },
+]
 
 function fileIcon(type) {
   if (!type) return "📄"
@@ -48,7 +58,6 @@ function fmtSize(bytes) {
 
 function FilePreview({ fileUrl, fileType, fileName }) {
   if (!fileUrl) return null
-
   if (fileType?.startsWith("image/")) {
     return (
       <div style={{ marginBottom: 20, borderRadius: 10, overflow: "hidden", border: `1px solid ${BORDER}` }}>
@@ -56,7 +65,6 @@ function FilePreview({ fileUrl, fileType, fileName }) {
       </div>
     )
   }
-
   if (fileType === "application/pdf") {
     return (
       <div style={{ marginBottom: 20, borderRadius: 10, overflow: "hidden", border: `1px solid ${BORDER}` }}>
@@ -64,7 +72,6 @@ function FilePreview({ fileUrl, fileType, fileName }) {
       </div>
     )
   }
-
   if (fileType?.startsWith("video/")) {
     return (
       <div style={{ marginBottom: 20, borderRadius: 10, overflow: "hidden", border: `1px solid ${BORDER}` }}>
@@ -72,7 +79,6 @@ function FilePreview({ fileUrl, fileType, fileName }) {
       </div>
     )
   }
-
   if (fileType?.startsWith("audio/")) {
     return (
       <div style={{ marginBottom: 20, padding: 20, background: "#F8FAFC", borderRadius: 10, border: `1px solid ${BORDER}` }}>
@@ -80,32 +86,32 @@ function FilePreview({ fileUrl, fileType, fileName }) {
       </div>
     )
   }
-
   return null
 }
 
 export default function Library({ user }) {
   const [docs, setDocs] = useState([])
+  const [groups, setGroups] = useState([])
   const [loading, setLoading] = useState(true)
   const [search, setSearch] = useState("")
-  const [activeCategory, setActiveCategory] = useState("All")
   const [showAdd, setShowAdd] = useState(false)
   const [viewDoc, setViewDoc] = useState(null)
   const [editDoc, setEditDoc] = useState(null)
-  const [view, setView] = useState("grid")
+  const [view, setView] = useState("group")
   const [activeTags, setActiveTags] = useState([])
-  const [form, setForm] = useState({ title: "", category: "Framework", description: "", content: "", tags: [], status: "Active", priority: 0 })
-  const [editForm, setEditForm] = useState({ title: "", category: "Framework", description: "", content: "", tags: [], status: "Active", priority: 0 })
+  const [form, setForm] = useState({ title: "", description: "", content: "", tags: [], groupId: "", subGroupId: "" })
+  const [editForm, setEditForm] = useState({ title: "", description: "", content: "", tags: [], groupId: "", subGroupId: "" })
   const [saving, setSaving] = useState(false)
+  const [showGroupManager, setShowGroupManager] = useState(false)
+  const [editingGroup, setEditingGroup] = useState(null)
+  const [addToGroupId, setAddToGroupId] = useState(null)
 
-  // File upload state
   const [file, setFile] = useState(null)
   const [progress, setProgress] = useState(0)
   const [uploading, setUploading] = useState(false)
   const [dragOver, setDragOver] = useState(false)
   const fileRef = useRef(null)
 
-  // Edit file upload state
   const [editFile, setEditFile] = useState(null)
   const [editProgress, setEditProgress] = useState(0)
   const [editUploading, setEditUploading] = useState(false)
@@ -117,7 +123,15 @@ export default function Library({ user }) {
     return [...set].sort()
   }, [docs])
 
-  useEffect(() => { loadDocs() }, [])
+  const groupMap = useMemo(() => {
+    const m = {}
+    groups.forEach(g => { m[g.id] = g })
+    return m
+  }, [groups])
+
+  const topGroups = useMemo(() => groups.filter(g => !g.parentId), [groups])
+
+  useEffect(() => { loadDocs(); loadGroups() }, [])
 
   async function loadDocs() {
     setLoading(true)
@@ -127,11 +141,106 @@ export default function Library({ user }) {
       setDocs(snap.docs.map(d => ({ id: d.id, ...d.data() })))
     } catch (e) {
       console.error("Library loadDocs error:", e)
-      if (e?.code === "permission-denied") {
-        alert("Permission denied loading library. Check Firestore rules.")
-      }
+      if (e?.code === "permission-denied") alert("Permission denied loading library. Check Firestore rules.")
     }
     setLoading(false)
+  }
+
+  async function loadGroups() {
+    try {
+      const q = query(collection(db, "groups"), where("collection", "==", "library"), orderBy("order", "asc"))
+      const snap = await getDocs(q)
+      let loaded = snap.docs.map(d => ({ id: d.id, ...d.data() }))
+      if (loaded.filter(g => !g.parentId).length === 0) {
+        loaded = await seedDefaultGroups()
+      }
+      setGroups(loaded)
+    } catch (e) {
+      console.error("Load groups error:", e)
+      try {
+        const q2 = query(collection(db, "groups"), where("collection", "==", "library"))
+        const snap2 = await getDocs(q2)
+        let loaded2 = snap2.docs.map(d => ({ id: d.id, ...d.data() }))
+        if (loaded2.filter(g => !g.parentId).length === 0) {
+          loaded2 = await seedDefaultGroups()
+        }
+        setGroups(loaded2)
+      } catch (e2) {
+        console.error("Fallback load groups error:", e2)
+      }
+    }
+  }
+
+  async function seedDefaultGroups() {
+    const created = []
+    for (const g of DEFAULT_GROUPS) {
+      const docRef = await addDoc(collection(db, "groups"), {
+        ...g,
+        parentId: null,
+        collection: "library",
+        createdAt: serverTimestamp(),
+      })
+      created.push({ id: docRef.id, ...g, parentId: null, collection: "library" })
+    }
+    return created
+  }
+
+  async function handleSaveGroup(data) {
+    try {
+      if (editingGroup?.id) {
+        await updateDoc(doc(db, "groups", editingGroup.id), { ...data, updatedAt: serverTimestamp() })
+      } else {
+        const order = groups.filter(g => !g.parentId).length
+        await addDoc(collection(db, "groups"), { ...data, order, createdAt: serverTimestamp() })
+      }
+      await loadGroups()
+      setShowGroupManager(false)
+      setEditingGroup(null)
+    } catch (e) {
+      console.error("Save group error:", e)
+      alert("Failed to save group: " + (e?.message || ""))
+    }
+  }
+
+  async function handleDeleteGroup(groupId) {
+    if (!window.confirm("Delete this group? Items will become ungrouped.")) return
+    try {
+      const subs = groups.filter(g => g.parentId === groupId)
+      for (const sub of subs) {
+        await deleteDoc(doc(db, "groups", sub.id))
+      }
+      await deleteDoc(doc(db, "groups", groupId))
+      const affected = docs.filter(d => d.groupId === groupId)
+      for (const d of affected) {
+        await updateDoc(doc(db, "library", d.id), { groupId: null, subGroupId: null, updatedAt: serverTimestamp() })
+      }
+      setDocs(prev => prev.map(d => d.groupId === groupId ? { ...d, groupId: null, subGroupId: null } : d))
+      await loadGroups()
+      setShowGroupManager(false)
+      setEditingGroup(null)
+    } catch (e) {
+      console.error("Delete group error:", e)
+    }
+  }
+
+  async function handleGroupChange(itemId, newGroupId, newSubGroupId) {
+    try {
+      const updates = { groupId: newGroupId || null, subGroupId: newSubGroupId || null, updatedAt: serverTimestamp() }
+      await updateDoc(doc(db, "library", itemId), updates)
+      setDocs(prev => prev.map(d => d.id === itemId ? { ...d, ...updates } : d))
+    } catch (e) {
+      console.error("Group change error:", e)
+    }
+  }
+
+  async function handlePin(item) {
+    const newPinned = !item.pinned
+    try {
+      await updateDoc(doc(db, "library", item.id), { pinned: newPinned, updatedAt: serverTimestamp() })
+      setDocs(prev => prev.map(d => d.id === item.id ? { ...d, pinned: newPinned } : d))
+    } catch (e) {
+      console.error("Pin error:", e)
+    }
   }
 
   function handleDrop(e) {
@@ -141,26 +250,13 @@ export default function Library({ user }) {
     if (dropped) setFile(dropped)
   }
 
-  function handleDragOver(e) {
-    e.preventDefault()
-    setDragOver(true)
-  }
-
-  function handleDragLeave() {
-    setDragOver(false)
-  }
-
   async function handleAdd(e) {
     e.preventDefault()
     setSaving(true)
     setUploading(false)
     setProgress(0)
     try {
-      let fileUrl = null
-      let fileName = null
-      let fileSize = null
-      let fileType = null
-      let storagePath = null
+      let fileUrl = null, fileName = null, fileSize = null, fileType = null, storagePath = null
 
       if (file) {
         setUploading(true)
@@ -168,11 +264,7 @@ export default function Library({ user }) {
         const storageRef = ref(storage, storagePath)
         const task = uploadBytesResumable(storageRef, file)
         await new Promise((resolve, reject) => {
-          task.on("state_changed",
-            snap => setProgress(Math.round((snap.bytesTransferred / snap.totalBytes) * 100)),
-            reject,
-            resolve
-          )
+          task.on("state_changed", snap => setProgress(Math.round((snap.bytesTransferred / snap.totalBytes) * 100)), reject, resolve)
         })
         fileUrl = await getDownloadURL(storageRef)
         fileName = file.name
@@ -182,8 +274,14 @@ export default function Library({ user }) {
       }
 
       const newDoc = {
-        ...form,
+        title: form.title,
+        description: form.description,
+        content: form.content,
         tags: form.tags,
+        groupId: form.groupId || null,
+        subGroupId: form.subGroupId || null,
+        pinned: false,
+        category: groupMap[form.groupId]?.name || "",
         uid: user.uid,
         createdAt: serverTimestamp(),
         updatedAt: serverTimestamp(),
@@ -191,10 +289,11 @@ export default function Library({ user }) {
       }
       const docRef = await addDoc(collection(db, "library"), newDoc)
       setDocs(prev => [{ id: docRef.id, ...newDoc, createdAt: new Date() }, ...prev])
-      setForm({ title: "", category: "Framework", description: "", content: "", tags: [], status: "Active", priority: 0 })
+      setForm({ title: "", description: "", content: "", tags: [], groupId: "", subGroupId: "" })
       setFile(null)
       setProgress(0)
       setShowAdd(false)
+      setAddToGroupId(null)
       loadDocs().catch(() => {})
     } catch (e) {
       console.error("Library add error:", e)
@@ -208,12 +307,11 @@ export default function Library({ user }) {
     setEditDoc(d)
     setEditForm({
       title: d.title || "",
-      category: d.category || "Framework",
       description: d.description || "",
       content: d.content || "",
       tags: d.tags || [],
-      status: d.status || "Active",
-      priority: d.priority || 0,
+      groupId: d.groupId || "",
+      subGroupId: d.subGroupId || "",
     })
     setEditFile(null)
     setEditProgress(0)
@@ -229,19 +327,17 @@ export default function Library({ user }) {
     try {
       const updates = {
         title: editForm.title,
-        category: editForm.category,
         description: editForm.description,
         content: editForm.content,
         tags: editForm.tags,
-        status: editForm.status,
-        priority: editForm.priority,
+        groupId: editForm.groupId || null,
+        subGroupId: editForm.subGroupId || null,
+        category: groupMap[editForm.groupId]?.name || editDoc.category || "",
         updatedAt: serverTimestamp(),
       }
 
-      // If replacing the file
       if (editFile) {
         setEditUploading(true)
-        // Delete old file from storage
         if (editDoc.storagePath) {
           try { await deleteObject(ref(storage, editDoc.storagePath)) } catch (_) {}
         }
@@ -249,11 +345,7 @@ export default function Library({ user }) {
         const storageRef = ref(storage, storagePath)
         const task = uploadBytesResumable(storageRef, editFile)
         await new Promise((resolve, reject) => {
-          task.on("state_changed",
-            snap => setEditProgress(Math.round((snap.bytesTransferred / snap.totalBytes) * 100)),
-            reject,
-            resolve
-          )
+          task.on("state_changed", snap => setEditProgress(Math.round((snap.bytesTransferred / snap.totalBytes) * 100)), reject, resolve)
         })
         updates.fileUrl = await getDownloadURL(storageRef)
         updates.fileName = editFile.name
@@ -280,11 +372,7 @@ export default function Library({ user }) {
     if (!window.confirm("Delete this document?")) return
     const target = docs.find(d => d.id === id)
     if (target?.storagePath) {
-      try {
-        await deleteObject(ref(storage, target.storagePath))
-      } catch (e) {
-        console.warn("Storage delete failed (file may already be gone):", e)
-      }
+      try { await deleteObject(ref(storage, target.storagePath)) } catch (e) { console.warn("Storage delete failed:", e) }
     }
     await deleteDoc(doc(db, "library", id))
     setDocs(prev => prev.filter(d => d.id !== id))
@@ -293,45 +381,68 @@ export default function Library({ user }) {
   }
 
   const filtered = docs.filter(d => {
-    const matchCat = activeCategory === "All" || d.category === activeCategory
     const matchSearch = !search ||
       d.title?.toLowerCase().includes(search.toLowerCase()) ||
       d.description?.toLowerCase().includes(search.toLowerCase()) ||
       (d.tags || []).some(t => t.toLowerCase().includes(search.toLowerCase()))
     const matchTags = activeTags.length === 0 || activeTags.some(t => (d.tags || []).includes(t))
-    return matchCat && matchSearch && matchTags
+    return matchSearch && matchTags
   })
+
+  const subGroupsFor = (groupId) => groups.filter(g => g.parentId === groupId)
+
+  function GroupSelect({ value, onChange, subValue, onSubChange }) {
+    const subs = value ? subGroupsFor(value) : []
+    return (
+      <>
+        <div>
+          <label style={{ fontSize: 12, color: MUTED, marginBottom: 4, display: "block" }}>Group</label>
+          <select value={value || ""} onChange={e => { onChange(e.target.value); if (onSubChange) onSubChange("") }} style={iStyle}>
+            <option value="">No group</option>
+            {topGroups.map(g => (
+              <option key={g.id} value={g.id}>{g.icon} {g.name}</option>
+            ))}
+          </select>
+        </div>
+        {subs.length > 0 && (
+          <div>
+            <label style={{ fontSize: 12, color: MUTED, marginBottom: 4, display: "block" }}>Sub-group</label>
+            <select value={subValue || ""} onChange={e => onSubChange(e.target.value)} style={iStyle}>
+              <option value="">None</option>
+              {subs.map(s => (
+                <option key={s.id} value={s.id}>{s.icon} {s.name}</option>
+              ))}
+            </select>
+          </div>
+        )}
+      </>
+    )
+  }
 
   return (
     <div style={{ minHeight: "100vh", background: BG, fontFamily: "system-ui, sans-serif", color: TEXT }}>
       <div style={{ background: CARD_BG, borderBottom: `1px solid ${BORDER}`, padding: "0 32px" }}>
-        <div style={{ maxWidth: 1100, margin: "0 auto", display: "flex", alignItems: "center", justifyContent: "space-between", height: 64 }}>
+        <div style={{ maxWidth: 1200, margin: "0 auto", display: "flex", alignItems: "center", justifyContent: "space-between", height: 64 }}>
           <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
             <a href="/" style={{ color: MUTED, textDecoration: "none", fontSize: 13 }}>← Home</a>
             <span style={{ color: BORDER }}>|</span>
             <span style={{ fontSize: 20, fontWeight: 700, color: TEXT }}>Library</span>
           </div>
           <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
-            <ViewToggle view={view} onToggle={setView} accentColor={ACCENT} />
-            <button onClick={() => setShowAdd(true)} style={{ background: ACCENT, color: "#fff", border: "none", borderRadius: 8, padding: "8px 20px", cursor: "pointer", fontSize: 14, fontWeight: 600 }}>
+            <ViewSwitcher view={view} onSwitch={setView} accentColor={ACCENT} />
+            <button onClick={() => { setShowGroupManager(true); setEditingGroup(null) }} style={{ background: ACCENT + "18", color: ACCENT, border: `1px solid ${ACCENT}44`, borderRadius: 8, padding: "7px 14px", cursor: "pointer", fontSize: 13, fontWeight: 600 }}>
+              Manage Groups
+            </button>
+            <button onClick={() => { setShowAdd(true); setAddToGroupId(null) }} style={{ background: ACCENT, color: "#fff", border: "none", borderRadius: 8, padding: "8px 20px", cursor: "pointer", fontSize: 14, fontWeight: 600 }}>
               + Add Doc
             </button>
           </div>
         </div>
       </div>
 
-      <div style={{ maxWidth: 1100, margin: "0 auto", padding: "32px 32px" }}>
+      <div style={{ maxWidth: 1200, margin: "0 auto", padding: "32px 32px" }}>
         <input type="text" placeholder="Search documents..." value={search} onChange={e => setSearch(e.target.value)}
           style={{ width: "100%", padding: "10px 16px", border: `1px solid ${BORDER}`, borderRadius: 8, fontSize: 14, background: CARD_BG, color: TEXT, boxSizing: "border-box", marginBottom: 20, outline: "none" }} />
-
-        <div style={{ display: "flex", gap: 8, marginBottom: 12, flexWrap: "wrap" }}>
-          {CATEGORIES.map(cat => (
-            <button key={cat} onClick={() => setActiveCategory(cat)}
-              style={{ padding: "6px 16px", borderRadius: 20, border: `1.5px solid ${activeCategory === cat ? ACCENT : BORDER}`, background: activeCategory === cat ? ACCENT : CARD_BG, color: activeCategory === cat ? "#fff" : MUTED, cursor: "pointer", fontSize: 13, fontWeight: 500 }}>
-              {cat}
-            </button>
-          ))}
-        </div>
 
         <TagFilter
           allTags={allTags}
@@ -345,74 +456,96 @@ export default function Library({ user }) {
           <div style={{ textAlign: "center", color: MUTED, padding: 60 }}>Loading...</div>
         ) : filtered.length === 0 ? (
           <div style={{ textAlign: "center", color: MUTED, padding: 60 }}>No documents found.</div>
-        ) : view === "kanban" ? (
-          <KanbanBoard
+        ) : view === "group" ? (
+          <GroupKanban
             items={filtered}
-            onStatusChange={async (id, newStatus) => {
-              await updateDoc(doc(db, "library", id), { status: newStatus, updatedAt: serverTimestamp() })
-              setDocs(prev => prev.map(d => d.id === id ? { ...d, status: newStatus } : d))
+            groups={groups}
+            onGroupChange={handleGroupChange}
+            onView={item => setViewDoc(item)}
+            onEdit={item => openEdit(item)}
+            onDelete={item => handleDelete(item.id)}
+            onPin={item => handlePin(item)}
+            onAddToGroup={groupId => { setAddToGroupId(groupId); setForm(f => ({ ...f, groupId })); setShowAdd(true) }}
+            onEditGroup={group => {
+              if (group._delete) { handleDeleteGroup(group.id) } else { setEditingGroup(group); setShowGroupManager(true) }
             }}
-            renderCard={item => (
-              <div onClick={() => setViewDoc(item)} style={{ background: "#fff", border: `1px solid ${BORDER}`, borderRadius: 10, padding: "12px 14px", cursor: "pointer" }}>
-                <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", marginBottom: 6 }}>
-                  <span style={{ background: ACCENT + "20", color: ACCENT, fontSize: 10, fontWeight: 700, padding: "1px 7px", borderRadius: 8 }}>{item.category}</span>
-                  {item.priority > 0 && <span style={{ fontSize: 10, color: MUTED }}>P{item.priority}</span>}
-                </div>
-                <div style={{ fontSize: 14, fontWeight: 600, marginBottom: 4 }}>{item.title}</div>
-                {item.tags?.length > 0 && (
-                  <div style={{ display: "flex", gap: 3, flexWrap: "wrap", marginTop: 6 }}>
-                    {item.tags.slice(0, 2).map(t => <span key={t} style={{ background: "#F8FAFC", color: MUTED, fontSize: 10, padding: "1px 6px", borderRadius: 8 }}>{t}</span>)}
-                  </div>
-                )}
+            onAddGroup={() => { setEditingGroup(null); setShowGroupManager(true) }}
+            onAddSubGroup={parentId => { setEditingGroup({ parentId }); setShowGroupManager(true) }}
+            accentColor={ACCENT}
+            borderColor={BORDER}
+            mutedColor={MUTED}
+          />
+        ) : view === "pinned" ? (
+          <div>
+            <h3 style={{ fontSize: 16, fontWeight: 600, color: MUTED, marginBottom: 16 }}>Pinned Resources</h3>
+            {filtered.filter(d => d.pinned).length === 0 ? (
+              <div style={{ textAlign: "center", color: MUTED, padding: 40, fontSize: 14 }}>No pinned items. Click the star on any resource to pin it.</div>
+            ) : (
+              <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(280px, 1fr))", gap: 18 }}>
+                {filtered.filter(d => d.pinned).map(d => (
+                  <ResourceCard key={d.id} item={d} group={groupMap[d.groupId]} onView={() => setViewDoc(d)} onEdit={() => openEdit(d)} onDelete={() => handleDelete(d.id)} onPin={() => handlePin(d)} accentColor={ACCENT} borderColor={BORDER} mutedColor={MUTED} />
+                ))}
               </div>
             )}
+          </div>
+        ) : view === "list" ? (
+          <ListView
+            items={filtered}
+            groups={groups}
+            onView={item => setViewDoc(item)}
+            onEdit={item => openEdit(item)}
+            onDelete={item => handleDelete(item.id)}
+            onPin={item => handlePin(item)}
             accentColor={ACCENT}
+            borderColor={BORDER}
+            mutedColor={MUTED}
           />
         ) : (
-          <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(300px, 1fr))", gap: 20 }}>
-            {filtered.map(d => <DocCard key={d.id} doc={d} onView={() => setViewDoc(d)} onEdit={() => openEdit(d)} onDelete={() => handleDelete(d.id)} accent={ACCENT} border={BORDER} muted={MUTED} />)}
+          <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(280px, 1fr))", gap: 18 }}>
+            {filtered.map(d => (
+              <ResourceCard key={d.id} item={d} group={groupMap[d.groupId]} onView={() => setViewDoc(d)} onEdit={() => openEdit(d)} onDelete={() => handleDelete(d.id)} onPin={() => handlePin(d)} accentColor={ACCENT} borderColor={BORDER} mutedColor={MUTED} />
+            ))}
           </div>
         )}
       </div>
 
-      {/* ── ADD MODAL ── */}
+      {/* GROUP MANAGER */}
+      {showGroupManager && (
+        <GroupManager
+          group={editingGroup}
+          groups={groups}
+          collectionName="library"
+          onSave={handleSaveGroup}
+          onDelete={handleDeleteGroup}
+          onClose={() => { setShowGroupManager(false); setEditingGroup(null) }}
+          accentColor={ACCENT}
+        />
+      )}
+
+      {/* ADD MODAL */}
       {showAdd && (
-        <Modal onClose={() => { setShowAdd(false); setFile(null); setProgress(0) }} title="Add Document" accent={ACCENT}>
+        <Modal onClose={() => { setShowAdd(false); setFile(null); setProgress(0); setAddToGroupId(null) }} title="Add Document" accent={ACCENT}>
           <form onSubmit={handleAdd} style={{ display: "flex", flexDirection: "column", gap: 14 }}>
             <input required placeholder="Title" value={form.title} onChange={e => setForm(f => ({ ...f, title: e.target.value }))} style={iStyle} />
-            <select value={form.category} onChange={e => setForm(f => ({ ...f, category: e.target.value }))} style={iStyle}>
-              {CATEGORIES.filter(c => c !== "All").map(c => <option key={c}>{c}</option>)}
-            </select>
+            <GroupSelect
+              value={form.groupId}
+              onChange={v => setForm(f => ({ ...f, groupId: v }))}
+              subValue={form.subGroupId}
+              onSubChange={v => setForm(f => ({ ...f, subGroupId: v }))}
+            />
             <input placeholder="Short description" value={form.description} onChange={e => setForm(f => ({ ...f, description: e.target.value }))} style={iStyle} />
             <textarea placeholder="Content (optional if uploading a file)" value={form.content} onChange={e => setForm(f => ({ ...f, content: e.target.value }))} rows={5} style={{ ...iStyle, resize: "vertical" }} />
             <TagInput tags={form.tags} onChange={tags => setForm(f => ({ ...f, tags }))} allTags={allTags} accentColor={ACCENT} />
-            <div style={{ display: "flex", gap: 10 }}>
-              <select value={form.status} onChange={e => setForm(f => ({ ...f, status: e.target.value }))} style={{ ...iStyle, flex: 1 }}>
-                <option value="Inbox">Inbox</option>
-                <option value="Active">Active</option>
-                <option value="Archive">Archive</option>
-              </select>
-              <select value={form.priority} onChange={e => setForm(f => ({ ...f, priority: Number(e.target.value) }))} style={{ ...iStyle, flex: 1 }}>
-                <option value={0}>Priority: None</option>
-                <option value={1}>Priority: Low</option>
-                <option value={2}>Priority: Medium</option>
-                <option value={3}>Priority: High</option>
-              </select>
-            </div>
 
             <div
               onDrop={handleDrop}
-              onDragOver={handleDragOver}
-              onDragLeave={handleDragLeave}
+              onDragOver={e => { e.preventDefault(); setDragOver(true) }}
+              onDragLeave={() => setDragOver(false)}
               onClick={() => fileRef.current?.click()}
               style={{
                 border: `2px dashed ${dragOver ? ACCENT : file ? "#22C55E" : BORDER}`,
-                borderRadius: 10,
-                padding: "20px 16px",
-                textAlign: "center",
-                cursor: "pointer",
-                background: dragOver ? ACCENT + "10" : file ? "#F0FDF4" : BG,
-                transition: "all 0.15s",
+                borderRadius: 10, padding: "20px 16px", textAlign: "center", cursor: "pointer",
+                background: dragOver ? ACCENT + "10" : file ? "#F0FDF4" : BG, transition: "all 0.15s",
               }}
             >
               {file ? (
@@ -422,18 +555,12 @@ export default function Library({ user }) {
                     <div style={{ fontSize: 13, fontWeight: 600, color: TEXT }}>{file.name}</div>
                     <div style={{ fontSize: 12, color: MUTED }}>{fmtSize(file.size)}</div>
                   </div>
-                  <button
-                    type="button"
-                    onClick={e => { e.stopPropagation(); setFile(null) }}
-                    style={{ marginLeft: 8, background: "none", border: "none", color: "#EF4444", cursor: "pointer", fontSize: 18, padding: 0 }}
-                  >×</button>
+                  <button type="button" onClick={e => { e.stopPropagation(); setFile(null) }} style={{ marginLeft: 8, background: "none", border: "none", color: "#EF4444", cursor: "pointer", fontSize: 18, padding: 0 }}>×</button>
                 </div>
               ) : (
                 <>
                   <div style={{ fontSize: 24, marginBottom: 6 }}>📁</div>
-                  <div style={{ fontSize: 13, color: MUTED }}>
-                    {dragOver ? "Drop to attach" : "Drag & drop a file, or click to browse"}
-                  </div>
+                  <div style={{ fontSize: 13, color: MUTED }}>{dragOver ? "Drop to attach" : "Drag & drop a file, or click to browse"}</div>
                   <div style={{ fontSize: 11, color: BORDER, marginTop: 4 }}>Optional — attach any file type</div>
                 </>
               )}
@@ -458,26 +585,24 @@ export default function Library({ user }) {
         </Modal>
       )}
 
-      {/* ── VIEW MODAL with preview ── */}
+      {/* VIEW MODAL */}
       {viewDoc && (
         <Modal onClose={() => setViewDoc(null)} title={viewDoc.title} accent={ACCENT} wide>
           <div>
             <div style={{ display: "flex", gap: 8, marginBottom: 16, flexWrap: "wrap" }}>
-              <span style={{ background: ACCENT + "22", color: ACCENT, padding: "2px 10px", borderRadius: 12, fontSize: 12, fontWeight: 600 }}>{viewDoc.category}</span>
+              {groupMap[viewDoc.groupId] && (
+                <span style={{ background: groupMap[viewDoc.groupId].color + "22", color: groupMap[viewDoc.groupId].color, padding: "2px 10px", borderRadius: 12, fontSize: 12, fontWeight: 600 }}>
+                  {groupMap[viewDoc.groupId].icon} {groupMap[viewDoc.groupId].name}
+                </span>
+              )}
               {(viewDoc.tags || []).map(t => <span key={t} style={{ background: "#F0F4F8", color: MUTED, padding: "2px 10px", borderRadius: 12, fontSize: 12 }}>{t}</span>)}
+              {viewDoc.pinned && <span style={{ fontSize: 12, color: "#F59E0B" }}>★ Pinned</span>}
             </div>
             {viewDoc.description && <p style={{ color: MUTED, marginBottom: 20, fontSize: 14 }}>{viewDoc.description}</p>}
-
-            {/* File preview */}
             <FilePreview fileUrl={viewDoc.fileUrl} fileType={viewDoc.fileType} fileName={viewDoc.fileName} />
-
             {viewDoc.fileUrl && (
-              <a
-                href={viewDoc.fileUrl}
-                target="_blank"
-                rel="noopener noreferrer"
-                style={{ display: "inline-flex", alignItems: "center", gap: 6, background: ACCENT + "18", color: ACCENT, padding: "7px 14px", borderRadius: 8, fontSize: 13, fontWeight: 600, textDecoration: "none", marginBottom: 20 }}
-              >
+              <a href={viewDoc.fileUrl} target="_blank" rel="noopener noreferrer"
+                style={{ display: "inline-flex", alignItems: "center", gap: 6, background: ACCENT + "18", color: ACCENT, padding: "7px 14px", borderRadius: 8, fontSize: 13, fontWeight: 600, textDecoration: "none", marginBottom: 20 }}>
                 {fileIcon(viewDoc.fileType)} {viewDoc.fileName || "Download attachment"} {viewDoc.fileSize ? `(${fmtSize(viewDoc.fileSize)})` : ""}
               </a>
             )}
@@ -486,48 +611,33 @@ export default function Library({ user }) {
                 <MarkdownRenderer content={viewDoc.content} accentColor={ACCENT} />
               </div>
             )}
-            {!viewDoc.content && !viewDoc.fileUrl && (
-              <p style={{ color: MUTED, fontStyle: "italic" }}>No content.</p>
-            )}
+            {!viewDoc.content && !viewDoc.fileUrl && <p style={{ color: MUTED, fontStyle: "italic" }}>No content.</p>}
             <div style={{ display: "flex", gap: 10, marginTop: 20 }}>
-              <button onClick={() => openEdit(viewDoc)} style={{ background: ACCENT + "18", color: ACCENT, border: `1px solid ${ACCENT}44`, borderRadius: 8, padding: "8px 16px", cursor: "pointer", fontSize: 13, fontWeight: 600 }}>
-                ✏️ Edit
+              <button onClick={() => openEdit(viewDoc)} style={{ background: ACCENT + "18", color: ACCENT, border: `1px solid ${ACCENT}44`, borderRadius: 8, padding: "8px 16px", cursor: "pointer", fontSize: 13, fontWeight: 600 }}>✏️ Edit</button>
+              <button onClick={() => handlePin(viewDoc)} style={{ background: viewDoc.pinned ? "#FEF3C7" : "#F9FAFB", color: viewDoc.pinned ? "#D97706" : MUTED, border: `1px solid ${viewDoc.pinned ? "#FDE68A" : BORDER}`, borderRadius: 8, padding: "8px 16px", cursor: "pointer", fontSize: 13 }}>
+                {viewDoc.pinned ? "★ Unpin" : "☆ Pin"}
               </button>
-              <button onClick={() => handleDelete(viewDoc.id)} style={{ background: "#FEF2F2", color: "#EF4444", border: "1px solid #FECACA", borderRadius: 8, padding: "8px 16px", cursor: "pointer", fontSize: 13 }}>
-                🗑 Delete
-              </button>
+              <button onClick={() => handleDelete(viewDoc.id)} style={{ background: "#FEF2F2", color: "#EF4444", border: "1px solid #FECACA", borderRadius: 8, padding: "8px 16px", cursor: "pointer", fontSize: 13 }}>🗑 Delete</button>
             </div>
-            <CollapsibleComments collectionName="library" docId={viewDoc.id} user={user} resourceTitle={viewDoc.title} accentColor={ACCENT} />
           </div>
         </Modal>
       )}
 
-      {/* ── EDIT MODAL ── */}
+      {/* EDIT MODAL */}
       {editDoc && (
         <Modal onClose={() => { setEditDoc(null); setEditFile(null) }} title="Edit Document" accent={ACCENT}>
           <form onSubmit={handleUpdate} style={{ display: "flex", flexDirection: "column", gap: 14 }}>
             <input required placeholder="Title" value={editForm.title} onChange={e => setEditForm(f => ({ ...f, title: e.target.value }))} style={iStyle} />
-            <select value={editForm.category} onChange={e => setEditForm(f => ({ ...f, category: e.target.value }))} style={iStyle}>
-              {CATEGORIES.filter(c => c !== "All").map(c => <option key={c}>{c}</option>)}
-            </select>
+            <GroupSelect
+              value={editForm.groupId}
+              onChange={v => setEditForm(f => ({ ...f, groupId: v }))}
+              subValue={editForm.subGroupId}
+              onSubChange={v => setEditForm(f => ({ ...f, subGroupId: v }))}
+            />
             <input placeholder="Short description" value={editForm.description} onChange={e => setEditForm(f => ({ ...f, description: e.target.value }))} style={iStyle} />
             <textarea placeholder="Content" value={editForm.content} onChange={e => setEditForm(f => ({ ...f, content: e.target.value }))} rows={5} style={{ ...iStyle, resize: "vertical" }} />
             <TagInput tags={editForm.tags} onChange={tags => setEditForm(f => ({ ...f, tags }))} allTags={allTags} accentColor={ACCENT} />
-            <div style={{ display: "flex", gap: 10 }}>
-              <select value={editForm.status} onChange={e => setEditForm(f => ({ ...f, status: e.target.value }))} style={{ ...iStyle, flex: 1 }}>
-                <option value="Inbox">Inbox</option>
-                <option value="Active">Active</option>
-                <option value="Archive">Archive</option>
-              </select>
-              <select value={editForm.priority} onChange={e => setEditForm(f => ({ ...f, priority: Number(e.target.value) }))} style={{ ...iStyle, flex: 1 }}>
-                <option value={0}>Priority: None</option>
-                <option value={1}>Priority: Low</option>
-                <option value={2}>Priority: Medium</option>
-                <option value={3}>Priority: High</option>
-              </select>
-            </div>
 
-            {/* Current file info */}
             {editDoc.fileUrl && !editFile && (
               <div style={{ display: "flex", alignItems: "center", gap: 8, padding: "10px 14px", background: BG, borderRadius: 8, border: `1px solid ${BORDER}` }}>
                 <span style={{ fontSize: 18 }}>{fileIcon(editDoc.fileType)}</span>
@@ -535,13 +645,9 @@ export default function Library({ user }) {
                   <div style={{ fontSize: 13, fontWeight: 600, color: TEXT }}>{editDoc.fileName}</div>
                   <div style={{ fontSize: 11, color: MUTED }}>{fmtSize(editDoc.fileSize)} — current file</div>
                 </div>
-                <button type="button" onClick={() => editFileRef.current?.click()} style={{ fontSize: 12, color: ACCENT, background: "none", border: `1px solid ${ACCENT}44`, borderRadius: 6, padding: "4px 10px", cursor: "pointer" }}>
-                  Replace
-                </button>
+                <button type="button" onClick={() => editFileRef.current?.click()} style={{ fontSize: 12, color: ACCENT, background: "none", border: `1px solid ${ACCENT}44`, borderRadius: 6, padding: "4px 10px", cursor: "pointer" }}>Replace</button>
               </div>
             )}
-
-            {/* New file selected */}
             {editFile && (
               <div style={{ display: "flex", alignItems: "center", gap: 8, padding: "10px 14px", background: "#F0FDF4", borderRadius: 8, border: "1px solid #BBF7D0" }}>
                 <span style={{ fontSize: 18 }}>{fileIcon(editFile.type)}</span>
@@ -552,14 +658,9 @@ export default function Library({ user }) {
                 <button type="button" onClick={() => setEditFile(null)} style={{ background: "none", border: "none", color: "#EF4444", cursor: "pointer", fontSize: 16 }}>×</button>
               </div>
             )}
-
-            {/* Upload new file if none exists */}
             {!editDoc.fileUrl && !editFile && (
-              <button type="button" onClick={() => editFileRef.current?.click()} style={{ padding: "10px", border: `2px dashed ${BORDER}`, borderRadius: 10, background: BG, color: MUTED, cursor: "pointer", fontSize: 13 }}>
-                📁 Attach a file
-              </button>
+              <button type="button" onClick={() => editFileRef.current?.click()} style={{ padding: "10px", border: `2px dashed ${BORDER}`, borderRadius: 10, background: BG, color: MUTED, cursor: "pointer", fontSize: 13 }}>📁 Attach a file</button>
             )}
-
             <input ref={editFileRef} type="file" onChange={e => setEditFile(e.target.files[0])} style={{ display: "none" }} />
 
             {editUploading && (
@@ -579,38 +680,6 @@ export default function Library({ user }) {
           </form>
         </Modal>
       )}
-    </div>
-  )
-}
-
-function DocCard({ doc, onView, onEdit, onDelete, accent, border, muted }) {
-  const [hovered, setHovered] = useState(false)
-  return (
-    <div onMouseEnter={() => setHovered(true)} onMouseLeave={() => setHovered(false)}
-      style={{ background: "#fff", border: `1px solid ${hovered ? accent : border}`, borderRadius: 12, padding: "20px", cursor: "pointer", transition: "all 0.15s", transform: hovered ? "translateY(-2px)" : "none", boxShadow: hovered ? "0 4px 16px rgba(123,143,168,0.12)" : "none" }}>
-      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", marginBottom: 8 }}>
-        <span style={{ background: accent + "20", color: accent, fontSize: 11, fontWeight: 700, padding: "2px 8px", borderRadius: 10 }}>{doc.category}</span>
-        <div style={{ display: "flex", gap: 4 }}>
-          <button onClick={e => { e.stopPropagation(); onEdit() }} title="Edit" style={{ background: "none", border: "none", color: "#CBD5E1", cursor: "pointer", fontSize: 14, padding: "0 2px" }}>✏️</button>
-          <button onClick={e => { e.stopPropagation(); onDelete() }} title="Delete" style={{ background: "none", border: "none", color: "#CBD5E1", cursor: "pointer", fontSize: 18, padding: 0 }}>×</button>
-        </div>
-      </div>
-      <div onClick={onView}>
-        <h3 style={{ fontSize: 17, fontWeight: 700, margin: "0 0 8px", lineHeight: 1.3 }}>{doc.title}</h3>
-        {doc.description && <p style={{ fontSize: 13, color: muted, margin: "0 0 12px", lineHeight: 1.5 }}>{doc.description}</p>}
-        {doc.fileUrl && (
-          <div style={{ display: "flex", alignItems: "center", gap: 5, marginBottom: 8 }}>
-            <span style={{ fontSize: 12 }}>{fileIcon(doc.fileType)}</span>
-            <span style={{ fontSize: 12, color: accent, fontWeight: 500 }}>{doc.fileName || "Attachment"}</span>
-            {doc.fileSize ? <span style={{ fontSize: 11, color: muted }}>({fmtSize(doc.fileSize)})</span> : null}
-          </div>
-        )}
-        {doc.tags?.length > 0 && (
-          <div style={{ display: "flex", gap: 4, flexWrap: "wrap" }}>
-            {doc.tags.slice(0, 3).map(t => <span key={t} style={{ background: "#F8FAFC", color: muted, fontSize: 11, padding: "2px 8px", borderRadius: 10 }}>{t}</span>)}
-          </div>
-        )}
-      </div>
     </div>
   )
 }
