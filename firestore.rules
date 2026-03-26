@@ -1,14 +1,133 @@
 rules_version = '2';
+
 service cloud.firestore {
   match /databases/{database}/documents {
+
+    // ─── App Config (shared by B Things + Brain Inbox) ───
+    match /appConfig/{docId} {
+      allow read, write: if request.auth != null;
+    }
+
+    // ─── B Things: User Tasks ───
+    match /users/{userId}/tasks/{taskId} {
+      allow read, write: if request.auth != null && request.auth.uid == userId;
+      allow read, write: if request.auth != null
+        && exists(/databases/$(database)/documents/users/$(userId)/viewers/$(request.auth.uid));
+
+      // NoteThread messages on tasks
+      match /messages/{messageId} {
+        allow read, write: if request.auth != null && request.auth.uid == userId;
+        allow read, write: if request.auth != null
+          && exists(/databases/$(database)/documents/users/$(userId)/viewers/$(request.auth.uid));
+      }
+    }
+
+    // ─── B Things: User Projects ───
+    match /users/{userId}/projects/{projectId} {
+      allow read, write: if request.auth != null && request.auth.uid == userId;
+      allow read, write: if request.auth != null
+        && exists(/databases/$(database)/documents/users/$(userId)/viewers/$(request.auth.uid));
+    }
+
+    // ─── Brain Inbox: Nico's Tasks ───
+    match /users/{userId}/nicoTasks/{taskId} {
+      allow read, write: if request.auth != null && request.auth.uid == userId;
+      allow read, write: if request.auth != null
+        && exists(/databases/$(database)/documents/users/$(userId)/viewers/$(request.auth.uid));
+    }
+
+    // ─── Brain Inbox: Nico's Projects ───
+    match /users/{userId}/nicoProjects/{projectId} {
+      allow read, write: if request.auth != null && request.auth.uid == userId;
+      allow read, write: if request.auth != null
+        && exists(/databases/$(database)/documents/users/$(userId)/viewers/$(request.auth.uid));
+    }
+
+    // ─── Brain Inbox: Inbox Messages ───
+    match /users/{userId}/inboxMessages/{messageId} {
+      allow read, write: if request.auth != null && request.auth.uid == userId;
+      allow read, write: if request.auth != null
+        && exists(/databases/$(database)/documents/users/$(userId)/viewers/$(request.auth.uid));
+    }
+
+    // ─── Brain Inbox: Nico's Notes ───
+    match /users/{userId}/nicoNotes/{noteId} {
+      allow read, write: if request.auth != null && request.auth.uid == userId;
+      allow read, write: if request.auth != null
+        && exists(/databases/$(database)/documents/users/$(userId)/viewers/$(request.auth.uid));
+    }
+
+    // ─── Viewer Registry (shared by B Things + Brain Inbox) ───
+    match /users/{userId}/viewers/{viewerId} {
+      allow read, write: if request.auth != null && request.auth.uid == userId;
+      allow read, write: if request.auth != null && request.auth.uid == viewerId;
+    }
+
+    // ─── B Resources: Vault (includes comments sub-collection) ───
     match /vault/{document=**} {
       allow read, write: if request.auth != null;
     }
+
+    // ─── B Resources: Library (includes comments sub-collection) ───
     match /library/{document=**} {
       allow read, write: if request.auth != null;
     }
+
+    // ─── B Resources: Groups (includes comments sub-collection) ───
     match /groups/{document=**} {
       allow read, write: if request.auth != null;
+    }
+
+    // ─── Content Calendar: Cards + Messages ───
+    match /contentCards/{cardId} {
+      allow read, write: if request.auth != null;
+
+      match /messages/{messageId} {
+        allow read, write: if request.auth != null;
+      }
+    }
+
+    // ─── Content Calendar: Platforms Config ───
+    match /contentPlatforms/{platformId} {
+      allow read, write: if request.auth != null;
+    }
+
+    // ─── Eddy: Restricted to Brian + Nico ───
+    match /eddy/{document} {
+      allow read, write: if request.auth != null
+        && request.auth.token.email in [
+          'brhnyc1970@gmail.com',
+          'nico@humbleconviction.com'
+        ];
+    }
+
+    // ─── B People: Contacts + Notes ───
+    match /contacts/{contactId} {
+      allow read, write: if request.auth != null;
+
+      match /notes/{noteId} {
+        allow read, write: if request.auth != null;
+      }
+    }
+
+    // ─── B People: Feed Items ───
+    match /feed_items/{itemId} {
+      allow read, write: if request.auth != null;
+    }
+
+    // ─── B People: User Settings ───
+    match /user_settings/{docId} {
+      allow read, write: if request.auth != null;
+    }
+
+    // ─── B People: Mail ───
+    match /mail/{mailId} {
+      allow read, write: if request.auth != null;
+    }
+
+    // ─── Block everything else ───
+    match /{document=**} {
+      allow read, write: if false;
     }
   }
 }
