@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef } from "react"
+import { useState, useEffect, useRef, useMemo } from "react"
 import { db, storage } from "../firebase"
 import {
   collection,
@@ -12,6 +12,10 @@ import {
   serverTimestamp,
 } from "firebase/firestore"
 import { ref, uploadBytesResumable, getDownloadURL, deleteObject } from "firebase/storage"
+import TagInput from "../components/TagInput"
+import TagFilter from "../components/TagFilter"
+import KanbanBoard from "../components/KanbanBoard"
+import ViewToggle from "../components/ViewToggle"
 
 const ACCENT = "#A89078"
 const BG = "#FAF7F4"
@@ -86,8 +90,10 @@ export default function Vault({ user }) {
   const [showAdd, setShowAdd] = useState(false)
   const [viewAsset, setViewAsset] = useState(null)
   const [editAsset, setEditAsset] = useState(null)
-  const [form, setForm] = useState({ name: "", category: "Brand", description: "", tags: "" })
-  const [editForm, setEditForm] = useState({ name: "", category: "Brand", description: "", tags: "" })
+  const [view, setView] = useState("grid")
+  const [activeTags, setActiveTags] = useState([])
+  const [form, setForm] = useState({ name: "", category: "Brand", description: "", tags: [], status: "Active", priority: 0 })
+  const [editForm, setEditForm] = useState({ name: "", category: "Brand", description: "", tags: [], status: "Active", priority: 0 })
   const [file, setFile] = useState(null)
   const [progress, setProgress] = useState(0)
   const [uploading, setUploading] = useState(false)
@@ -100,6 +106,12 @@ export default function Vault({ user }) {
   const [editProgress, setEditProgress] = useState(0)
   const [editUploading, setEditUploading] = useState(false)
   const editFileRef = useRef()
+
+  const allTags = useMemo(() => {
+    const set = new Set()
+    assets.forEach(a => (a.tags || []).forEach(t => set.add(t)))
+    return [...set].sort()
+  }, [assets])
 
   useEffect(() => { loadAssets() }, [])
 
@@ -140,7 +152,9 @@ export default function Vault({ user }) {
         name: form.name || file.name,
         category: form.category,
         description: form.description,
-        tags: form.tags.split(",").map(t => t.trim()).filter(Boolean),
+        tags: form.tags,
+        status: form.status,
+        priority: form.priority,
         fileUrl,
         fileName: file.name,
         fileSize: file.size,
@@ -148,11 +162,12 @@ export default function Vault({ user }) {
         storagePath,
         uid: user.uid,
         createdAt: serverTimestamp(),
+        updatedAt: serverTimestamp(),
       }
       const docRef = await addDoc(collection(db, "vault"), newAsset)
       // Optimistic: add to local state immediately so item always appears
       setAssets(prev => [{ id: docRef.id, ...newAsset, createdAt: new Date() }, ...prev])
-      setForm({ name: "", category: "Brand", description: "", tags: "" })
+      setForm({ name: "", category: "Brand", description: "", tags: [], status: "Active", priority: 0 })
       setFile(null)
       if (fileRef.current) fileRef.current.value = ""
       setShowAdd(false)
@@ -170,7 +185,9 @@ export default function Vault({ user }) {
       name: asset.name || "",
       category: asset.category || "Brand",
       description: asset.description || "",
-      tags: (asset.tags || []).join(", "),
+      tags: asset.tags || [],
+      status: asset.status || "Active",
+      priority: asset.priority || 0,
     })
     setEditFile(null)
     setEditProgress(0)
@@ -188,7 +205,10 @@ export default function Vault({ user }) {
         name: editForm.name,
         category: editForm.category,
         description: editForm.description,
-        tags: editForm.tags.split(",").map(t => t.trim()).filter(Boolean),
+        tags: editForm.tags,
+        status: editForm.status,
+        priority: editForm.priority,
+        updatedAt: serverTimestamp(),
       }
 
       if (editFile) {
@@ -265,7 +285,8 @@ export default function Vault({ user }) {
       a.description?.toLowerCase().includes(search.toLowerCase()) ||
       a.fileName?.toLowerCase().includes(search.toLowerCase()) ||
       (a.tags || []).some(t => t.toLowerCase().includes(search.toLowerCase()))
-    return matchCat && matchSearch
+    const matchTags = activeTags.length === 0 || activeTags.some(t => (a.tags || []).includes(t))
+    return matchCat && matchSearch && matchTags
   })
 
   return (
@@ -277,9 +298,12 @@ export default function Vault({ user }) {
             <span style={{ color: BORDER }}>|</span>
             <span style={{ fontSize: 20, fontWeight: 700, color: TEXT }}>Vault</span>
           </div>
-          <button onClick={() => setShowAdd(true)} style={{ background: ACCENT, color: "#fff", border: "none", borderRadius: 8, padding: "8px 20px", cursor: "pointer", fontSize: 14, fontWeight: 600 }}>
-            + Upload Asset
-          </button>
+          <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
+            <ViewToggle view={view} onToggle={setView} accentColor={ACCENT} />
+            <button onClick={() => setShowAdd(true)} style={{ background: ACCENT, color: "#fff", border: "none", borderRadius: 8, padding: "8px 20px", cursor: "pointer", fontSize: 14, fontWeight: 600 }}>
+              + Upload Asset
+            </button>
+          </div>
         </div>
       </div>
 
@@ -287,7 +311,7 @@ export default function Vault({ user }) {
         <input type="text" placeholder="Search assets..." value={search} onChange={e => setSearch(e.target.value)}
           style={{ width: "100%", padding: "10px 16px", border: `1px solid ${BORDER}`, borderRadius: 8, fontSize: 14, background: CARD_BG, boxSizing: "border-box", marginBottom: 20, outline: "none" }} />
 
-        <div style={{ display: "flex", gap: 8, marginBottom: 28, flexWrap: "wrap" }}>
+        <div style={{ display: "flex", gap: 8, marginBottom: 12, flexWrap: "wrap" }}>
           {CATEGORIES.map(cat => (
             <button key={cat} onClick={() => setActiveCategory(cat)}
               style={{ padding: "6px 16px", borderRadius: 20, border: `1.5px solid ${activeCategory === cat ? ACCENT : BORDER}`, background: activeCategory === cat ? ACCENT : CARD_BG, color: activeCategory === cat ? "#fff" : MUTED, cursor: "pointer", fontSize: 13, fontWeight: 500 }}>
@@ -296,10 +320,43 @@ export default function Vault({ user }) {
           ))}
         </div>
 
+        <TagFilter
+          allTags={allTags}
+          activeTags={activeTags}
+          onToggle={tag => setActiveTags(prev => prev.includes(tag) ? prev.filter(t => t !== tag) : [...prev, tag])}
+          onClear={() => setActiveTags([])}
+          accentColor={ACCENT}
+        />
+
         {loading ? (
           <div style={{ textAlign: "center", color: MUTED, padding: 60 }}>Loading...</div>
         ) : filtered.length === 0 ? (
           <div style={{ textAlign: "center", color: MUTED, padding: 60 }}>No assets found.</div>
+        ) : view === "kanban" ? (
+          <KanbanBoard
+            items={filtered}
+            onStatusChange={async (id, newStatus) => {
+              await updateDoc(doc(db, "vault", id), { status: newStatus, updatedAt: serverTimestamp() })
+              setAssets(prev => prev.map(a => a.id === id ? { ...a, status: newStatus } : a))
+            }}
+            renderCard={item => (
+              <div style={{ background: CARD_BG, border: `1px solid ${BORDER}`, borderRadius: 10, padding: 14 }}>
+                <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 6 }}>
+                  <span style={{ fontSize: 20 }}>{fileIcon(item.fileType)}</span>
+                  <span style={{ fontSize: 14, fontWeight: 600, color: TEXT, flex: 1, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{item.name}</span>
+                </div>
+                <div style={{ fontSize: 11, color: MUTED, marginBottom: 6 }}>
+                  <span style={{ background: ACCENT + "22", color: ACCENT, padding: "1px 8px", borderRadius: 10, fontWeight: 600 }}>{item.category}</span>
+                </div>
+                {item.tags?.length > 0 && (
+                  <div style={{ display: "flex", gap: 4, flexWrap: "wrap" }}>
+                    {item.tags.slice(0, 3).map(t => <span key={t} style={{ background: "#FAF7F4", color: MUTED, fontSize: 11, padding: "2px 8px", borderRadius: 10 }}>{t}</span>)}
+                  </div>
+                )}
+              </div>
+            )}
+            accentColor={ACCENT}
+          />
         ) : (
           <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(280px, 1fr))", gap: 18 }}>
             {filtered.map(a => (
@@ -361,7 +418,18 @@ export default function Vault({ user }) {
               {CATEGORIES.filter(c => c !== "All").map(c => <option key={c}>{c}</option>)}
             </select>
             <input placeholder="Description" value={form.description} onChange={e => setForm(f => ({ ...f, description: e.target.value }))} style={iStyle} />
-            <input placeholder="Tags (comma separated)" value={form.tags} onChange={e => setForm(f => ({ ...f, tags: e.target.value }))} style={iStyle} />
+            <TagInput tags={form.tags} onChange={tags => setForm(f => ({ ...f, tags }))} allTags={allTags} accentColor={ACCENT} />
+            <select value={form.status} onChange={e => setForm(f => ({ ...f, status: e.target.value }))} style={iStyle}>
+              <option value="Inbox">Inbox</option>
+              <option value="Active">Active</option>
+              <option value="Archive">Archive</option>
+            </select>
+            <select value={form.priority} onChange={e => setForm(f => ({ ...f, priority: Number(e.target.value) }))} style={iStyle}>
+              <option value={0}>Priority: None</option>
+              <option value={1}>Priority: Low</option>
+              <option value={2}>Priority: Medium</option>
+              <option value={3}>Priority: High</option>
+            </select>
             {uploading && (
               <div>
                 <div style={{ height: 6, background: "#F1EDE8", borderRadius: 4, overflow: "hidden" }}>
@@ -424,7 +492,18 @@ export default function Vault({ user }) {
               {CATEGORIES.filter(c => c !== "All").map(c => <option key={c}>{c}</option>)}
             </select>
             <input placeholder="Description" value={editForm.description} onChange={e => setEditForm(f => ({ ...f, description: e.target.value }))} style={iStyle} />
-            <input placeholder="Tags (comma separated)" value={editForm.tags} onChange={e => setEditForm(f => ({ ...f, tags: e.target.value }))} style={iStyle} />
+            <TagInput tags={editForm.tags} onChange={tags => setEditForm(f => ({ ...f, tags }))} allTags={allTags} accentColor={ACCENT} />
+            <select value={editForm.status} onChange={e => setEditForm(f => ({ ...f, status: e.target.value }))} style={iStyle}>
+              <option value="Inbox">Inbox</option>
+              <option value="Active">Active</option>
+              <option value="Archive">Archive</option>
+            </select>
+            <select value={editForm.priority} onChange={e => setEditForm(f => ({ ...f, priority: Number(e.target.value) }))} style={iStyle}>
+              <option value={0}>Priority: None</option>
+              <option value={1}>Priority: Low</option>
+              <option value={2}>Priority: Medium</option>
+              <option value={3}>Priority: High</option>
+            </select>
 
             {/* Current file */}
             {editAsset.fileUrl && !editFile && (

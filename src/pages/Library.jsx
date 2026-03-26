@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef } from "react"
+import { useState, useEffect, useRef, useMemo } from "react"
 import { db, storage } from "../firebase"
 import {
   collection,
@@ -12,6 +12,10 @@ import {
   serverTimestamp,
 } from "firebase/firestore"
 import { ref, uploadBytesResumable, getDownloadURL, deleteObject } from "firebase/storage"
+import TagInput from "../components/TagInput"
+import TagFilter from "../components/TagFilter"
+import KanbanBoard from "../components/KanbanBoard"
+import ViewToggle from "../components/ViewToggle"
 
 const ACCENT = "#7B8FA8"
 const BG = "#F6F8FA"
@@ -86,8 +90,10 @@ export default function Library({ user }) {
   const [showAdd, setShowAdd] = useState(false)
   const [viewDoc, setViewDoc] = useState(null)
   const [editDoc, setEditDoc] = useState(null)
-  const [form, setForm] = useState({ title: "", category: "Framework", description: "", content: "", tags: "" })
-  const [editForm, setEditForm] = useState({ title: "", category: "Framework", description: "", content: "", tags: "" })
+  const [view, setView] = useState("grid")
+  const [activeTags, setActiveTags] = useState([])
+  const [form, setForm] = useState({ title: "", category: "Framework", description: "", content: "", tags: [], status: "Active", priority: 0 })
+  const [editForm, setEditForm] = useState({ title: "", category: "Framework", description: "", content: "", tags: [], status: "Active", priority: 0 })
   const [saving, setSaving] = useState(false)
 
   // File upload state
@@ -102,6 +108,12 @@ export default function Library({ user }) {
   const [editProgress, setEditProgress] = useState(0)
   const [editUploading, setEditUploading] = useState(false)
   const editFileRef = useRef(null)
+
+  const allTags = useMemo(() => {
+    const set = new Set()
+    docs.forEach(d => (d.tags || []).forEach(t => set.add(t)))
+    return [...set].sort()
+  }, [docs])
 
   useEffect(() => { loadDocs() }, [])
 
@@ -169,15 +181,15 @@ export default function Library({ user }) {
 
       const newDoc = {
         ...form,
-        tags: form.tags.split(",").map(t => t.trim()).filter(Boolean),
+        tags: form.tags,
         uid: user.uid,
         createdAt: serverTimestamp(),
+        updatedAt: serverTimestamp(),
         ...(fileUrl && { fileUrl, fileName, fileSize, fileType, storagePath }),
       }
       const docRef = await addDoc(collection(db, "library"), newDoc)
-      // Optimistic: add to local state immediately so item always appears
       setDocs(prev => [{ id: docRef.id, ...newDoc, createdAt: new Date() }, ...prev])
-      setForm({ title: "", category: "Framework", description: "", content: "", tags: "" })
+      setForm({ title: "", category: "Framework", description: "", content: "", tags: [], status: "Active", priority: 0 })
       setFile(null)
       setProgress(0)
       setShowAdd(false)
@@ -197,7 +209,9 @@ export default function Library({ user }) {
       category: d.category || "Framework",
       description: d.description || "",
       content: d.content || "",
-      tags: (d.tags || []).join(", "),
+      tags: d.tags || [],
+      status: d.status || "Active",
+      priority: d.priority || 0,
     })
     setEditFile(null)
     setEditProgress(0)
@@ -216,7 +230,10 @@ export default function Library({ user }) {
         category: editForm.category,
         description: editForm.description,
         content: editForm.content,
-        tags: editForm.tags.split(",").map(t => t.trim()).filter(Boolean),
+        tags: editForm.tags,
+        status: editForm.status,
+        priority: editForm.priority,
+        updatedAt: serverTimestamp(),
       }
 
       // If replacing the file
@@ -279,7 +296,8 @@ export default function Library({ user }) {
       d.title?.toLowerCase().includes(search.toLowerCase()) ||
       d.description?.toLowerCase().includes(search.toLowerCase()) ||
       (d.tags || []).some(t => t.toLowerCase().includes(search.toLowerCase()))
-    return matchCat && matchSearch
+    const matchTags = activeTags.length === 0 || activeTags.some(t => (d.tags || []).includes(t))
+    return matchCat && matchSearch && matchTags
   })
 
   return (
@@ -291,9 +309,12 @@ export default function Library({ user }) {
             <span style={{ color: BORDER }}>|</span>
             <span style={{ fontSize: 20, fontWeight: 700, color: TEXT }}>Library</span>
           </div>
-          <button onClick={() => setShowAdd(true)} style={{ background: ACCENT, color: "#fff", border: "none", borderRadius: 8, padding: "8px 20px", cursor: "pointer", fontSize: 14, fontWeight: 600 }}>
-            + Add Doc
-          </button>
+          <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
+            <ViewToggle view={view} onToggle={setView} accentColor={ACCENT} />
+            <button onClick={() => setShowAdd(true)} style={{ background: ACCENT, color: "#fff", border: "none", borderRadius: 8, padding: "8px 20px", cursor: "pointer", fontSize: 14, fontWeight: 600 }}>
+              + Add Doc
+            </button>
+          </div>
         </div>
       </div>
 
@@ -301,7 +322,7 @@ export default function Library({ user }) {
         <input type="text" placeholder="Search documents..." value={search} onChange={e => setSearch(e.target.value)}
           style={{ width: "100%", padding: "10px 16px", border: `1px solid ${BORDER}`, borderRadius: 8, fontSize: 14, background: CARD_BG, color: TEXT, boxSizing: "border-box", marginBottom: 20, outline: "none" }} />
 
-        <div style={{ display: "flex", gap: 8, marginBottom: 28, flexWrap: "wrap" }}>
+        <div style={{ display: "flex", gap: 8, marginBottom: 12, flexWrap: "wrap" }}>
           {CATEGORIES.map(cat => (
             <button key={cat} onClick={() => setActiveCategory(cat)}
               style={{ padding: "6px 16px", borderRadius: 20, border: `1.5px solid ${activeCategory === cat ? ACCENT : BORDER}`, background: activeCategory === cat ? ACCENT : CARD_BG, color: activeCategory === cat ? "#fff" : MUTED, cursor: "pointer", fontSize: 13, fontWeight: 500 }}>
@@ -310,10 +331,41 @@ export default function Library({ user }) {
           ))}
         </div>
 
+        <TagFilter
+          allTags={allTags}
+          activeTags={activeTags}
+          onToggle={tag => setActiveTags(prev => prev.includes(tag) ? prev.filter(t => t !== tag) : [...prev, tag])}
+          onClear={() => setActiveTags([])}
+          accentColor={ACCENT}
+        />
+
         {loading ? (
           <div style={{ textAlign: "center", color: MUTED, padding: 60 }}>Loading...</div>
         ) : filtered.length === 0 ? (
           <div style={{ textAlign: "center", color: MUTED, padding: 60 }}>No documents found.</div>
+        ) : view === "kanban" ? (
+          <KanbanBoard
+            items={filtered}
+            onStatusChange={async (id, newStatus) => {
+              await updateDoc(doc(db, "library", id), { status: newStatus, updatedAt: serverTimestamp() })
+              setDocs(prev => prev.map(d => d.id === id ? { ...d, status: newStatus } : d))
+            }}
+            renderCard={item => (
+              <div onClick={() => setViewDoc(item)} style={{ background: "#fff", border: `1px solid ${BORDER}`, borderRadius: 10, padding: "12px 14px", cursor: "pointer" }}>
+                <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", marginBottom: 6 }}>
+                  <span style={{ background: ACCENT + "20", color: ACCENT, fontSize: 10, fontWeight: 700, padding: "1px 7px", borderRadius: 8 }}>{item.category}</span>
+                  {item.priority > 0 && <span style={{ fontSize: 10, color: MUTED }}>P{item.priority}</span>}
+                </div>
+                <div style={{ fontSize: 14, fontWeight: 600, marginBottom: 4 }}>{item.title}</div>
+                {item.tags?.length > 0 && (
+                  <div style={{ display: "flex", gap: 3, flexWrap: "wrap", marginTop: 6 }}>
+                    {item.tags.slice(0, 2).map(t => <span key={t} style={{ background: "#F8FAFC", color: MUTED, fontSize: 10, padding: "1px 6px", borderRadius: 8 }}>{t}</span>)}
+                  </div>
+                )}
+              </div>
+            )}
+            accentColor={ACCENT}
+          />
         ) : (
           <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(300px, 1fr))", gap: 20 }}>
             {filtered.map(d => <DocCard key={d.id} doc={d} onView={() => setViewDoc(d)} onEdit={() => openEdit(d)} onDelete={() => handleDelete(d.id)} accent={ACCENT} border={BORDER} muted={MUTED} />)}
@@ -331,7 +383,20 @@ export default function Library({ user }) {
             </select>
             <input placeholder="Short description" value={form.description} onChange={e => setForm(f => ({ ...f, description: e.target.value }))} style={iStyle} />
             <textarea placeholder="Content (optional if uploading a file)" value={form.content} onChange={e => setForm(f => ({ ...f, content: e.target.value }))} rows={5} style={{ ...iStyle, resize: "vertical" }} />
-            <input placeholder="Tags (comma separated)" value={form.tags} onChange={e => setForm(f => ({ ...f, tags: e.target.value }))} style={iStyle} />
+            <TagInput tags={form.tags} onChange={tags => setForm(f => ({ ...f, tags }))} allTags={allTags} accentColor={ACCENT} />
+            <div style={{ display: "flex", gap: 10 }}>
+              <select value={form.status} onChange={e => setForm(f => ({ ...f, status: e.target.value }))} style={{ ...iStyle, flex: 1 }}>
+                <option value="Inbox">Inbox</option>
+                <option value="Active">Active</option>
+                <option value="Archive">Archive</option>
+              </select>
+              <select value={form.priority} onChange={e => setForm(f => ({ ...f, priority: Number(e.target.value) }))} style={{ ...iStyle, flex: 1 }}>
+                <option value={0}>Priority: None</option>
+                <option value={1}>Priority: Low</option>
+                <option value={2}>Priority: Medium</option>
+                <option value={3}>Priority: High</option>
+              </select>
+            </div>
 
             <div
               onDrop={handleDrop}
@@ -444,7 +509,20 @@ export default function Library({ user }) {
             </select>
             <input placeholder="Short description" value={editForm.description} onChange={e => setEditForm(f => ({ ...f, description: e.target.value }))} style={iStyle} />
             <textarea placeholder="Content" value={editForm.content} onChange={e => setEditForm(f => ({ ...f, content: e.target.value }))} rows={5} style={{ ...iStyle, resize: "vertical" }} />
-            <input placeholder="Tags (comma separated)" value={editForm.tags} onChange={e => setEditForm(f => ({ ...f, tags: e.target.value }))} style={iStyle} />
+            <TagInput tags={editForm.tags} onChange={tags => setEditForm(f => ({ ...f, tags }))} allTags={allTags} accentColor={ACCENT} />
+            <div style={{ display: "flex", gap: 10 }}>
+              <select value={editForm.status} onChange={e => setEditForm(f => ({ ...f, status: e.target.value }))} style={{ ...iStyle, flex: 1 }}>
+                <option value="Inbox">Inbox</option>
+                <option value="Active">Active</option>
+                <option value="Archive">Archive</option>
+              </select>
+              <select value={editForm.priority} onChange={e => setEditForm(f => ({ ...f, priority: Number(e.target.value) }))} style={{ ...iStyle, flex: 1 }}>
+                <option value={0}>Priority: None</option>
+                <option value={1}>Priority: Low</option>
+                <option value={2}>Priority: Medium</option>
+                <option value={3}>Priority: High</option>
+              </select>
+            </div>
 
             {/* Current file info */}
             {editDoc.fileUrl && !editFile && (
