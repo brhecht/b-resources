@@ -109,7 +109,12 @@ export default function Vault({ user }) {
       const q = query(collection(db, "vault"), orderBy("createdAt", "desc"))
       const snap = await getDocs(q)
       setAssets(snap.docs.map(d => ({ id: d.id, ...d.data() })))
-    } catch (e) { console.error(e) }
+    } catch (e) {
+      console.error("Vault loadAssets error:", e)
+      if (e?.code === "permission-denied") {
+        alert("Permission denied loading vault. Check Firestore rules.")
+      }
+    }
     setLoading(false)
   }
 
@@ -131,7 +136,7 @@ export default function Vault({ user }) {
         )
       })
       const fileUrl = await getDownloadURL(storageRef)
-      await addDoc(collection(db, "vault"), {
+      const newAsset = {
         name: form.name || file.name,
         category: form.category,
         description: form.description,
@@ -143,13 +148,17 @@ export default function Vault({ user }) {
         storagePath,
         uid: user.uid,
         createdAt: serverTimestamp(),
-      })
+      }
+      const docRef = await addDoc(collection(db, "vault"), newAsset)
+      // Optimistic: add to local state immediately so item always appears
+      setAssets(prev => [{ id: docRef.id, ...newAsset, createdAt: new Date() }, ...prev])
       setForm({ name: "", category: "Brand", description: "", tags: "" })
       setFile(null)
       if (fileRef.current) fileRef.current.value = ""
       setShowAdd(false)
       setProgress(0)
-      await loadAssets()
+      // Refresh in background to sync server timestamps
+      loadAssets().catch(() => {})
     } catch (e) { console.error("Vault upload error:", e); alert("Upload failed: " + (e?.message || e?.code || "Unknown error")) }
     setUploading(false)
     setSaving(false)
@@ -206,12 +215,14 @@ export default function Vault({ user }) {
       }
 
       await updateDoc(doc(db, "vault", editAsset.id), updates)
+      // Optimistic: update local state immediately
+      setAssets(prev => prev.map(a => a.id === editAsset.id ? { ...a, ...updates } : a))
       setEditAsset(null)
       setEditFile(null)
-      await loadAssets()
+      loadAssets().catch(() => {})
     } catch (e) {
-      console.error(e)
-      alert("Update failed. Please try again.")
+      console.error("Vault update error:", e)
+      alert("Update failed: " + (e?.message || e?.code || "Please try again."))
     }
     setSaving(false)
     setEditUploading(false)

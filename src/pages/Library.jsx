@@ -111,7 +111,12 @@ export default function Library({ user }) {
       const q = query(collection(db, "library"), orderBy("createdAt", "desc"))
       const snap = await getDocs(q)
       setDocs(snap.docs.map(d => ({ id: d.id, ...d.data() })))
-    } catch (e) { console.error(e) }
+    } catch (e) {
+      console.error("Library loadDocs error:", e)
+      if (e?.code === "permission-denied") {
+        alert("Permission denied loading library. Check Firestore rules.")
+      }
+    }
     setLoading(false)
   }
 
@@ -162,22 +167,24 @@ export default function Library({ user }) {
         setUploading(false)
       }
 
-      await addDoc(collection(db, "library"), {
+      const newDoc = {
         ...form,
         tags: form.tags.split(",").map(t => t.trim()).filter(Boolean),
         uid: user.uid,
         createdAt: serverTimestamp(),
         ...(fileUrl && { fileUrl, fileName, fileSize, fileType, storagePath }),
-      })
-
+      }
+      const docRef = await addDoc(collection(db, "library"), newDoc)
+      // Optimistic: add to local state immediately so item always appears
+      setDocs(prev => [{ id: docRef.id, ...newDoc, createdAt: new Date() }, ...prev])
       setForm({ title: "", category: "Framework", description: "", content: "", tags: "" })
       setFile(null)
       setProgress(0)
       setShowAdd(false)
-      await loadDocs()
+      loadDocs().catch(() => {})
     } catch (e) {
-      console.error(e)
-      alert("Save failed. Please try again.")
+      console.error("Library add error:", e)
+      alert("Save failed: " + (e?.message || e?.code || "Please try again."))
     }
     setSaving(false)
     setUploading(false)
@@ -238,12 +245,13 @@ export default function Library({ user }) {
       }
 
       await updateDoc(doc(db, "library", editDoc.id), updates)
+      setDocs(prev => prev.map(d => d.id === editDoc.id ? { ...d, ...updates } : d))
       setEditDoc(null)
       setEditFile(null)
-      await loadDocs()
+      loadDocs().catch(() => {})
     } catch (e) {
-      console.error(e)
-      alert("Update failed. Please try again.")
+      console.error("Library update error:", e)
+      alert("Update failed: " + (e?.message || e?.code || "Please try again."))
     }
     setSaving(false)
     setEditUploading(false)
