@@ -17,6 +17,7 @@ import TagFilter from "../components/TagFilter"
 import KanbanBoard from "../components/KanbanBoard"
 import ViewToggle from "../components/ViewToggle"
 import MarkdownRenderer from "../components/MarkdownRenderer"
+import { CollapsibleComments } from "../components/CommentSection"
 
 const ACCENT = "#7B8FA8"
 const BG = "#F6F8FA"
@@ -496,6 +497,7 @@ export default function Library({ user }) {
                 🗑 Delete
               </button>
             </div>
+            <CollapsibleComments collectionName="library" docId={viewDoc.id} user={user} resourceTitle={viewDoc.title} accentColor={ACCENT} />
           </div>
         </Modal>
       )}

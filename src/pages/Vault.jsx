@@ -17,6 +17,7 @@ import TagFilter from "../components/TagFilter"
 import KanbanBoard from "../components/KanbanBoard"
 import ViewToggle from "../components/ViewToggle"
 import MarkdownRenderer from "../components/MarkdownRenderer"
+import { CollapsibleComments } from "../components/CommentSection"
 
 const ACCENT = "#A89078"
 const BG = "#FAF7F4"
@@ -484,6 +485,7 @@ export default function Vault({ user }) {
                 🗑 Delete
               </button>
             </div>
+            <CollapsibleComments collectionName="vault" docId={viewAsset.id} user={user} resourceTitle={viewAsset.name} accentColor={ACCENT} />
           </div>
         </Modal>
       )}
