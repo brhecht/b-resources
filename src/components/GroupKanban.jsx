@@ -154,9 +154,7 @@ export default function GroupKanban({
         onDragLeave={handleDragLeave}
         onDrop={e => handleDrop(e, group.id, null)}
         style={{
-          minWidth: 280,
-          maxWidth: 320,
-          flex: "0 0 280px",
+          width: "100%",
           background: isOver ? `${group.color}11` : "#F9FAFB",
           borderRadius: 12,
           border: isOver ? `2px dashed ${group.color}` : "2px solid transparent",
@@ -189,7 +187,7 @@ export default function GroupKanban({
         </div>
 
         {/* Column body */}
-        <div style={{ flex: 1, padding: "0 8px 8px", overflowY: "auto", minHeight: 60 }}>
+        <div style={{ flex: 1, padding: "0 12px 12px", minHeight: 60 }}>
           {/* Sub-groups */}
           {subs.map(sub => {
             const subItems = groupItems.filter(i => i.subGroupId === sub.id)
@@ -220,13 +218,21 @@ export default function GroupKanban({
                   <span style={{ fontSize: 12, fontWeight: 600, color: sub.color }}>{sub.name}</span>
                   <span style={{ fontSize: 10, color: "#9CA3AF" }}>({subItems.length})</span>
                 </div>
-                {!collapsed && subItems.map(item => renderItemCard(item))}
+                {!collapsed && (
+                  <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(260px, 1fr))", gap: 8, padding: "4px 8px 8px" }}>
+                    {subItems.map(item => renderItemCard(item))}
+                  </div>
+                )}
               </div>
             )
           })}
 
           {/* Ungrouped items in this column */}
-          {ungroupedInCol.map(item => renderItemCard(item))}
+          {ungroupedInCol.length > 0 && (
+            <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(260px, 1fr))", gap: 8 }}>
+              {ungroupedInCol.map(item => renderItemCard(item))}
+            </div>
+          )}
 
           {colItems === 0 && (
             <div style={{ display: "flex", alignItems: "center", justifyContent: "center", flex: 1, minHeight: 60, color: "#9CA3AF", fontSize: 12, fontStyle: "italic" }}>
@@ -241,7 +247,7 @@ export default function GroupKanban({
   const ungrouped = getUngroupedItems()
 
   return (
-    <div style={{ display: "flex", gap: 16, overflowX: "auto", paddingBottom: 16, minHeight: 400 }}>
+    <div style={{ display: "flex", flexDirection: "column", gap: 16, paddingBottom: 16 }}>
       {/* Ungrouped column */}
       {ungrouped.length > 0 && (
         <div
@@ -249,9 +255,7 @@ export default function GroupKanban({
           onDragLeave={handleDragLeave}
           onDrop={e => handleDrop(e, null, null)}
           style={{
-            minWidth: 280,
-            maxWidth: 320,
-            flex: "0 0 280px",
+            width: "100%",
             background: dragOverCol === "__ungrouped" ? "#F3F4F611" : "#F9FAFB",
             borderRadius: 12,
             border: dragOverCol === "__ungrouped" ? "2px dashed #9CA3AF" : "2px solid transparent",
@@ -264,8 +268,10 @@ export default function GroupKanban({
             <span style={{ fontSize: 14, fontWeight: 700, color: "#6B7280" }}>Ungrouped</span>
             <span style={{ fontSize: 11, fontWeight: 600, color: "#6B7280", background: "#E5E7EB", borderRadius: 9999, padding: "1px 7px" }}>{ungrouped.length}</span>
           </div>
-          <div style={{ flex: 1, padding: "0 8px 8px", overflowY: "auto" }}>
+          <div style={{ flex: 1, padding: "0 12px 12px" }}>
+          <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(260px, 1fr))", gap: 8 }}>
             {ungrouped.map(item => renderItemCard(item))}
+          </div>
           </div>
         </div>
       )}
@@ -277,8 +283,7 @@ export default function GroupKanban({
       <div
         onClick={onAddGroup}
         style={{
-          minWidth: 200,
-          flex: "0 0 200px",
+          width: "100%",
           background: "#F9FAFB",
           borderRadius: 12,
           border: `2px dashed ${borderColor}`,
@@ -290,7 +295,7 @@ export default function GroupKanban({
           fontSize: 14,
           fontWeight: 600,
           transition: "all 0.15s",
-          minHeight: 200,
+          padding: "16px 0",
         }}
         onMouseEnter={e => { e.currentTarget.style.borderColor = accentColor; e.currentTarget.style.color = accentColor }}
         onMouseLeave={e => { e.currentTarget.style.borderColor = borderColor; e.currentTarget.style.color = "#9CA3AF" }}
