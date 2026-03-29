@@ -22,6 +22,7 @@ import GroupManager from "../components/GroupManager"
 import ListView from "../components/ListView"
 import ResourceCard from "../components/ResourceCard"
 import MarkdownRenderer from "../components/MarkdownRenderer"
+import { getTagColor } from "../components/tagColors"
 
 const ACCENT = "#7B8FA8"
 const BG = "#F6F8FA"
@@ -647,7 +648,7 @@ export default function Library({ user }) {
                   {groupMap[viewDoc.groupId].icon} {groupMap[viewDoc.groupId].name}
                 </span>
               )}
-              {(viewDoc.tags || []).map(t => <span key={t} style={{ background: "#F0F4F8", color: MUTED, padding: "2px 10px", borderRadius: 12, fontSize: 12 }}>{t}</span>)}
+              {(viewDoc.tags || []).map(t => { const tc = getTagColor(t); return <span key={t} style={{ background: tc.bg, color: tc.text, padding: "2px 10px", borderRadius: 12, fontSize: 12 }}>{t}</span> })}
               {viewDoc.pinned && <span style={{ fontSize: 12, color: "#F59E0B" }}>★ Pinned</span>}
             </div>
             {(viewDoc.createdAt || viewDoc.updatedAt) && (

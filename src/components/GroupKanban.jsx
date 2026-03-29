@@ -1,6 +1,16 @@
 import { useState } from "react"
 import { getTagColor } from "./tagColors"
 
+function displayTitle(item) {
+  if (item.title) return item.title
+  const name = item.name || "Untitled"
+  // If name looks like a filename, clean it up for display
+  if (/\.[a-z0-9]{1,5}$/i.test(name)) {
+    return name.replace(/\.[a-z0-9]{1,5}$/i, "").replace(/[-_]/g, " ").replace(/\b\w/g, c => c.toUpperCase())
+  }
+  return name
+}
+
 function fileIcon(type) {
   if (!type) return "📄"
   if (type.startsWith("image/")) return "🖼️"
@@ -97,9 +107,10 @@ export default function GroupKanban({
   }
 
   function renderItemCard(item) {
-    const title = item.title || item.name || "Untitled"
+    const title = displayTitle(item)
     const tags = item.tags || []
-    const hasFileName = item.fileName && item.fileName !== title
+    const rawName = item.title || item.name || "Untitled"
+    const hasFileName = item.fileName && item.fileName !== rawName
     const meta = item._msgMeta
     const ek = userEmail ? userEmail.replace(/\./g, "_") : ""
     const hasUnread = meta?.lastAt && ek && !meta.readBy?.[ek]

@@ -17,6 +17,15 @@ function timeAgo(ts) {
   return date.toLocaleDateString("en-US", { month: "short", day: "numeric" })
 }
 
+function displayTitle(item) {
+  if (item.title) return item.title
+  const name = item.name || "Untitled"
+  if (/\.[a-z0-9]{1,5}$/i.test(name)) {
+    return name.replace(/\.[a-z0-9]{1,5}$/i, "").replace(/[-_]/g, " ").replace(/\b\w/g, c => c.toUpperCase())
+  }
+  return name
+}
+
 function fileIcon(type) {
   if (!type) return "📄"
   if (type.startsWith("image/")) return "🖼️"
@@ -32,7 +41,7 @@ function fileIcon(type) {
 export default function ResourceCard({ item, group, onView, onEdit, onDelete, onPin, accentColor = "#7B8FA8", borderColor = "#E2E8F0", mutedColor = "#6B7A99", userEmail }) {
   const [hovered, setHovered] = useState(false)
 
-  const title = item.title || item.name || "Untitled"
+  const title = displayTitle(item)
   const description = item.description || ""
   const tags = item.tags || []
   const isImage = item.fileType?.startsWith("image/")

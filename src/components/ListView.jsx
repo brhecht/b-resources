@@ -1,6 +1,15 @@
 import { useState } from "react"
 import { getTagColor } from "./tagColors"
 
+function displayTitle(item) {
+  if (item.title) return item.title
+  const name = item.name || "Untitled"
+  if (/\.[a-z0-9]{1,5}$/i.test(name)) {
+    return name.replace(/\.[a-z0-9]{1,5}$/i, "").replace(/[-_]/g, " ").replace(/\b\w/g, c => c.toUpperCase())
+  }
+  return name
+}
+
 function fileIcon(type) {
   if (!type) return "📄"
   if (type.startsWith("image/")) return "🖼️"
@@ -86,7 +95,7 @@ export default function ListView({ items, groups, onView, onEdit, onDelete, onPi
         <div style={{ padding: 40, textAlign: "center", color: mutedColor, fontSize: 14 }}>No items found.</div>
       ) : (
         sorted.map(item => {
-          const title = item.title || item.name || "Untitled"
+          const title = displayTitle(item)
           const group = groupMap[item.groupId]
           const tags = item.tags || []
 
@@ -124,7 +133,7 @@ export default function ListView({ items, groups, onView, onEdit, onDelete, onPi
               </div>
 
               <div style={{ flex: 2, display: "flex", gap: 4, flexWrap: "wrap", minWidth: 0 }}>
-                {tags.slice(0, 3).map(t => {
+                {tags.map(t => {
                   const tc = getTagColor(t)
                   return <span key={t} style={{ background: tc.bg, color: tc.text, fontSize: 10, padding: "1px 6px", borderRadius: 8, whiteSpace: "nowrap" }}>{t}</span>
                 })}

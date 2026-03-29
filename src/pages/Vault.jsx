@@ -22,6 +22,7 @@ import GroupManager from "../components/GroupManager"
 import ListView from "../components/ListView"
 import ResourceCard from "../components/ResourceCard"
 import MarkdownRenderer from "../components/MarkdownRenderer"
+import { getTagColor } from "../components/tagColors"
 
 const ACCENT = "#A89078"
 const BG = "#FAF7F4"
@@ -36,6 +37,15 @@ const DEFAULT_GROUPS = [
   { name: "Legal", color: "#8B8B8B", icon: "⚖️", order: 2 },
   { name: "Media", color: "#C47A9B", icon: "🖼️", order: 3 },
 ]
+
+function displayTitle(item) {
+  if (item.title) return item.title
+  const name = item.name || "Untitled"
+  if (/\.[a-z0-9]{1,5}$/i.test(name)) {
+    return name.replace(/\.[a-z0-9]{1,5}$/i, "").replace(/[-_]/g, " ").replace(/\b\w/g, c => c.toUpperCase())
+  }
+  return name
+}
 
 function fileIcon(type) {
   if (!type) return "📄"
@@ -298,6 +308,7 @@ export default function Vault({ user }) {
       })
       const fileUrl = await getDownloadURL(storageRef)
       const newAsset = {
+        title: form.name || "",
         name: form.name || file.name,
         description: form.description,
         tags: form.tags,
@@ -354,6 +365,7 @@ export default function Vault({ user }) {
     setEditProgress(0)
     try {
       const updates = {
+        title: editForm.name,
         name: editForm.name,
         description: editForm.description,
         tags: editForm.tags,
@@ -627,7 +639,7 @@ export default function Vault({ user }) {
 
       {/* VIEW MODAL */}
       {viewAsset && (
-        <Modal onClose={() => setViewAsset(null)} title={viewAsset.name} accent={ACCENT} wide>
+        <Modal onClose={() => setViewAsset(null)} title={displayTitle(viewAsset)} accent={ACCENT} wide>
           <div>
             <div style={{ display: "flex", gap: 8, marginBottom: 16, flexWrap: "wrap", alignItems: "center" }}>
               {groupMap[viewAsset.groupId] && (
@@ -636,9 +648,14 @@ export default function Vault({ user }) {
                 </span>
               )}
               {viewAsset.fileSize ? <span style={{ fontSize: 12, color: MUTED }}>{fmtSize(viewAsset.fileSize)}</span> : null}
-              {(viewAsset.tags || []).map(t => <span key={t} style={{ background: "#F5F0EB", color: MUTED, padding: "2px 10px", borderRadius: 12, fontSize: 12 }}>{t}</span>)}
+              {(viewAsset.tags || []).map(t => { const tc = getTagColor(t); return <span key={t} style={{ background: tc.bg, color: tc.text, padding: "2px 10px", borderRadius: 12, fontSize: 12 }}>{t}</span> })}
               {viewAsset.pinned && <span style={{ fontSize: 12, color: "#F59E0B" }}>★ Pinned</span>}
             </div>
+            {viewAsset.fileName && viewAsset.fileName !== (viewAsset.title || viewAsset.name) && (
+              <div style={{ fontSize: 12, color: MUTED, marginBottom: 8, opacity: 0.7 }}>
+                File: {viewAsset.fileName}
+              </div>
+            )}
             {(viewAsset.createdAt || viewAsset.updatedAt) && (
               <div style={{ fontSize: 12, color: MUTED, marginBottom: 12, display: "flex", gap: 16 }}>
                 {viewAsset.createdAt && <span>Created {fmtDate(viewAsset.createdAt)}</span>}
@@ -662,7 +679,7 @@ export default function Vault({ user }) {
                 {fileIcon(viewAsset.fileType)} Download {viewAsset.fileName || "file"}
               </a>
             )}
-            <CollapsibleMessages collectionName="vault" docId={viewAsset.id} user={user} resourceTitle={viewAsset.name} accentColor={ACCENT} />
+            <CollapsibleMessages collectionName="vault" docId={viewAsset.id} user={user} resourceTitle={displayTitle(viewAsset)} accentColor={ACCENT} />
             <div style={{ display: "flex", gap: 10, marginTop: 20 }}>
               <button onClick={() => openEdit(viewAsset)} style={{ background: ACCENT + "18", color: ACCENT, border: `1px solid ${ACCENT}44`, borderRadius: 8, padding: "8px 16px", cursor: "pointer", fontSize: 13, fontWeight: 600 }}>✏️ Edit</button>
               <button onClick={() => handlePin(viewAsset)} style={{ background: viewAsset.pinned ? "#FEF3C7" : "#F9FAFB", color: viewAsset.pinned ? "#D97706" : MUTED, border: `1px solid ${viewAsset.pinned ? "#FDE68A" : BORDER}`, borderRadius: 8, padding: "8px 16px", cursor: "pointer", fontSize: 13 }}>
