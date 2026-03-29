@@ -88,15 +88,29 @@ export default function GroupKanban({
     setCollapsedSubs(prev => ({ ...prev, [subId]: !prev[subId] }))
   }
 
+  function sortPinnedFirst(arr) {
+    return [...arr].sort((a, b) => {
+      if (a.pinned && !b.pinned) return -1
+      if (!a.pinned && b.pinned) return 1
+      return 0
+    })
+  }
+
   function renderItemCard(item) {
     const title = item.title || item.name || "Untitled"
     const tags = item.tags || []
+    const hasFileName = item.fileName && item.fileName !== title
+    const meta = item._msgMeta
+    const ek = userEmail ? userEmail.replace(/\./g, "_") : ""
+    const hasUnread = meta?.lastAt && ek && !meta.readBy?.[ek]
+
     return (
       <div
         key={item.id}
         draggable="true"
         onDragStart={e => handleDragStart(e, item)}
         onClick={() => onView(item)}
+        title={item.summary || ""}
         style={{
           background: "#fff",
           border: `1px solid ${borderColor}`,
@@ -105,21 +119,29 @@ export default function GroupKanban({
           cursor: "grab",
           marginBottom: 6,
           transition: "box-shadow 0.1s",
+          position: "relative",
         }}
         onMouseEnter={e => e.currentTarget.style.boxShadow = "0 2px 8px rgba(0,0,0,0.08)"}
         onMouseLeave={e => e.currentTarget.style.boxShadow = "none"}
       >
-        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", marginBottom: 4 }}>
-          <div style={{ display: "flex", alignItems: "center", gap: 6, flex: 1, minWidth: 0 }}>
-            {(() => { const meta = item._msgMeta; const ek = userEmail ? userEmail.replace(/\./g, "_") : ""; return meta?.lastAt && ek && !meta.readBy?.[ek] ? <span style={{ width: 8, height: 8, borderRadius: "50%", background: "#2563EB", flexShrink: 0 }} /> : null })()}
-            <span style={{ fontSize: 14, flexShrink: 0 }}>{fileIcon(item.fileType)}</span>
-            <span style={{ fontSize: 13, fontWeight: 600, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{title}</span>
+        {hasUnread && (
+          <div style={{ position: "absolute", top: 6, right: 6, width: 8, height: 8, borderRadius: "50%", background: "#2563EB", boxShadow: "0 0 0 2px #fff", zIndex: 2 }} />
+        )}
+        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", marginBottom: 2 }}>
+          <div style={{ flex: 1, minWidth: 0 }}>
+            <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
+              <span style={{ fontSize: 14, flexShrink: 0 }}>{fileIcon(item.fileType)}</span>
+              <span style={{ fontSize: 13, fontWeight: 600, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{title}</span>
+            </div>
+            {hasFileName && (
+              <div style={{ fontSize: 10, color: mutedColor, opacity: 0.7, marginTop: 1, marginLeft: 20, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+                {item.fileName}
+              </div>
+            )}
           </div>
           <div style={{ display: "flex", gap: 2, flexShrink: 0 }} onClick={e => e.stopPropagation()}>
-            {onPin && (
-              <button onClick={() => onPin(item)} style={{ background: "none", border: "none", color: item.pinned ? "#F59E0B" : "#D1D5DB", cursor: "pointer", fontSize: 12, padding: 0 }}>
-                {item.pinned ? "★" : "☆"}
-              </button>
+            {onPin && (item.pinned || false) && (
+              <button onClick={() => onPin(item)} style={{ background: "none", border: "none", color: "#F59E0B", cursor: "pointer", fontSize: 12, padding: 0 }}>★</button>
             )}
           </div>
         </div>
@@ -130,11 +152,15 @@ export default function GroupKanban({
         )}
         {tags.length > 0 && (
           <div style={{ display: "flex", gap: 3, flexWrap: "wrap" }}>
-            {tags.slice(0, 2).map(t => {
+            {tags.map(t => {
               const tc = getTagColor(t)
               return <span key={t} style={{ background: tc.bg, color: tc.text, fontSize: 9, padding: "1px 6px", borderRadius: 8 }}>{t}</span>
             })}
-            {tags.length > 2 && <span style={{ fontSize: 9, color: mutedColor }}>+{tags.length - 2}</span>}
+          </div>
+        )}
+        {(item.updatedAt || item.createdAt) && (
+          <div style={{ fontSize: 9, color: mutedColor, marginTop: 4, opacity: 0.6 }}>
+            {(() => { const ts = item.updatedAt || item.createdAt; const d = ts?.toDate ? ts.toDate() : new Date(ts); const diff = Date.now() - d.getTime(); const mins = Math.floor(diff / 60000); if (mins < 60) return `${mins}m ago`; const hrs = Math.floor(mins / 60); if (hrs < 24) return `${hrs}h ago`; const days = Math.floor(hrs / 24); if (days < 7) return `${days}d ago`; return d.toLocaleDateString("en-US", { month: "short", day: "numeric" }); })()}
           </div>
         )}
       </div>
@@ -222,7 +248,7 @@ export default function GroupKanban({
                 </div>
                 {!collapsed && (
                   <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(260px, 1fr))", gap: 8, padding: "4px 8px 8px" }}>
-                    {subItems.map(item => renderItemCard(item))}
+                    {sortPinnedFirst(subItems).map(item => renderItemCard(item))}
                   </div>
                 )}
               </div>
@@ -232,7 +258,7 @@ export default function GroupKanban({
           {/* Ungrouped items in this column */}
           {ungroupedInCol.length > 0 && (
             <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(260px, 1fr))", gap: 8 }}>
-              {ungroupedInCol.map(item => renderItemCard(item))}
+              {sortPinnedFirst(ungroupedInCol).map(item => renderItemCard(item))}
             </div>
           )}
 
@@ -272,7 +298,7 @@ export default function GroupKanban({
           </div>
           <div style={{ flex: 1, padding: "0 12px 12px" }}>
           <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(260px, 1fr))", gap: 8 }}>
-            {ungrouped.map(item => renderItemCard(item))}
+            {sortPinnedFirst(ungrouped).map(item => renderItemCard(item))}
           </div>
           </div>
         </div>
