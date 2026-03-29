@@ -119,7 +119,7 @@ export default function ListView({ items, groups, onView, onEdit, onDelete, onPi
                 {(() => { const meta = item._msgMeta; const ek = userEmail ? userEmail.replace(/\./g, "_") : ""; return meta?.lastAt && ek && !meta.readBy?.[ek] ? <span style={{ width: 8, height: 8, borderRadius: "50%", background: "#2563EB", flexShrink: 0 }} /> : null })()}
                 <span style={{ fontSize: 16, flexShrink: 0 }}>{fileIcon(item.fileType)}</span>
                 <span style={{ fontSize: 14, fontWeight: 600, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{title}</span>
-                {item.pinned && <span style={{ fontSize: 12 }}>★</span>}
+                {item.pinned && <span style={{ fontSize: 12 }}>📌</span>}
               </div>
 
               <div style={{ flex: 1.5, minWidth: 0 }}>
@@ -149,8 +149,8 @@ export default function ListView({ items, groups, onView, onEdit, onDelete, onPi
 
               <div style={{ width: 60, display: "flex", gap: 4, justifyContent: "flex-end" }} onClick={e => e.stopPropagation()}>
                 {onPin && (
-                  <button onClick={() => onPin(item)} title={item.pinned ? "Unpin" : "Pin"} style={{ background: "none", border: "none", color: item.pinned ? "#F59E0B" : "#CBD5E1", cursor: "pointer", fontSize: 13, padding: 0 }}>
-                    {item.pinned ? "★" : "☆"}
+                  <button onClick={() => onPin(item)} title={item.pinned ? "Unpin" : "Pin"} style={{ background: "none", border: "none", cursor: "pointer", fontSize: 12, padding: 0, opacity: item.pinned ? 1 : 0.4 }}>
+                    📌
                   </button>
                 )}
                 <button onClick={() => onEdit(item)} title="Edit" style={{ background: "none", border: "none", color: "#CBD5E1", cursor: "pointer", fontSize: 13, padding: 0 }}>✏️</button>

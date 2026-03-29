@@ -157,7 +157,7 @@ export default function GroupKanban({
           </div>
           <div style={{ display: "flex", gap: 2, flexShrink: 0 }} onClick={e => e.stopPropagation()}>
             {onPin && (item.pinned || false) && (
-              <button onClick={() => onPin(item)} style={{ background: "none", border: "none", color: "#F59E0B", cursor: "pointer", fontSize: 12, padding: 0 }}>★</button>
+              <button onClick={() => onPin(item)} style={{ background: "none", border: "none", cursor: "pointer", fontSize: 12, padding: 0 }}>📌</button>
             )}
           </div>
         </div>

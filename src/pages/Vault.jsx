@@ -534,7 +534,7 @@ export default function Vault({ user }) {
             {filtered.some(a => a.pinned) && (
               <>
                 <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 12 }}>
-                  <span style={{ fontSize: 13, fontWeight: 600, color: "#F59E0B" }}>★ Pinned</span>
+                  <span style={{ fontSize: 13, fontWeight: 600, color: "#F59E0B" }}>📌 Pinned</span>
                   <div style={{ flex: 1, height: 1, background: BORDER }} />
                 </div>
                 <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(280px, 1fr))", gap: 18, marginBottom: 24 }}>
@@ -650,7 +650,7 @@ export default function Vault({ user }) {
               )}
               {viewAsset.fileSize ? <span style={{ fontSize: 12, color: MUTED }}>{fmtSize(viewAsset.fileSize)}</span> : null}
               {(viewAsset.tags || []).map(t => { const tc = getTagColor(t); return <span key={t} style={{ background: tc.bg, color: tc.text, padding: "2px 10px", borderRadius: 12, fontSize: 12 }}>{t}</span> })}
-              {viewAsset.pinned && <span style={{ fontSize: 12, color: "#F59E0B" }}>★ Pinned</span>}
+              {viewAsset.pinned && <span style={{ fontSize: 12, color: "#F59E0B" }}>📌 Pinned</span>}
             </div>
             {viewAsset.fileName && viewAsset.fileName !== (viewAsset.title || viewAsset.name) && (
               <div style={{ fontSize: 12, color: MUTED, marginBottom: 8, opacity: 0.7 }}>
@@ -688,7 +688,7 @@ export default function Vault({ user }) {
             <div style={{ display: "flex", gap: 10, marginTop: 20 }}>
               <button onClick={() => openEdit(viewAsset)} style={{ background: ACCENT + "18", color: ACCENT, border: `1px solid ${ACCENT}44`, borderRadius: 8, padding: "8px 16px", cursor: "pointer", fontSize: 13, fontWeight: 600 }}>✏️ Edit</button>
               <button onClick={() => handlePin(viewAsset)} style={{ background: viewAsset.pinned ? "#FEF3C7" : "#F9FAFB", color: viewAsset.pinned ? "#D97706" : MUTED, border: `1px solid ${viewAsset.pinned ? "#FDE68A" : BORDER}`, borderRadius: 8, padding: "8px 16px", cursor: "pointer", fontSize: 13 }}>
-                {viewAsset.pinned ? "★ Unpin" : "☆ Pin"}
+                {viewAsset.pinned ? "📌 Unpin" : "📌 Pin"}
               </button>
               <button onClick={() => handleDelete(viewAsset)} style={{ background: "#FEF2F2", color: "#EF4444", border: "1px solid #FECACA", borderRadius: 8, padding: "8px 16px", cursor: "pointer", fontSize: 13 }}>🗑 Delete</button>
             </div>

@@ -534,7 +534,7 @@ export default function Library({ user }) {
             {filtered.some(d => d.pinned) && (
               <>
                 <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 12 }}>
-                  <span style={{ fontSize: 13, fontWeight: 600, color: "#F59E0B" }}>★ Pinned</span>
+                  <span style={{ fontSize: 13, fontWeight: 600, color: "#F59E0B" }}>📌 Pinned</span>
                   <div style={{ flex: 1, height: 1, background: BORDER }} />
                 </div>
                 <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(280px, 1fr))", gap: 18, marginBottom: 24 }}>
@@ -650,7 +650,7 @@ export default function Library({ user }) {
                 </span>
               )}
               {(viewDoc.tags || []).map(t => { const tc = getTagColor(t); return <span key={t} style={{ background: tc.bg, color: tc.text, padding: "2px 10px", borderRadius: 12, fontSize: 12 }}>{t}</span> })}
-              {viewDoc.pinned && <span style={{ fontSize: 12, color: "#F59E0B" }}>★ Pinned</span>}
+              {viewDoc.pinned && <span style={{ fontSize: 12, color: "#F59E0B" }}>📌 Pinned</span>}
             </div>
             {(viewDoc.createdAt || viewDoc.updatedAt) && (
               <div style={{ fontSize: 12, color: MUTED, marginBottom: 12, display: "flex", gap: 16 }}>
@@ -685,7 +685,7 @@ export default function Library({ user }) {
             <div style={{ display: "flex", gap: 10, marginTop: 20 }}>
               <button onClick={() => openEdit(viewDoc)} style={{ background: ACCENT + "18", color: ACCENT, border: `1px solid ${ACCENT}44`, borderRadius: 8, padding: "8px 16px", cursor: "pointer", fontSize: 13, fontWeight: 600 }}>✏️ Edit</button>
               <button onClick={() => handlePin(viewDoc)} style={{ background: viewDoc.pinned ? "#FEF3C7" : "#F9FAFB", color: viewDoc.pinned ? "#D97706" : MUTED, border: `1px solid ${viewDoc.pinned ? "#FDE68A" : BORDER}`, borderRadius: 8, padding: "8px 16px", cursor: "pointer", fontSize: 13 }}>
-                {viewDoc.pinned ? "★ Unpin" : "☆ Pin"}
+                {viewDoc.pinned ? "📌 Unpin" : "📌 Pin"}
               </button>
               <button onClick={() => handleDelete(viewDoc.id)} style={{ background: "#FEF2F2", color: "#EF4444", border: "1px solid #FECACA", borderRadius: 8, padding: "8px 16px", cursor: "pointer", fontSize: 13 }}>🗑 Delete</button>
             </div>

@@ -107,8 +107,8 @@ export default function ResourceCard({ item, group, onView, onEdit, onDelete, on
           </div>
           <div style={{ display: "flex", gap: 2, flexShrink: 0 }}>
             {onPin && (item.pinned || hovered) && (
-              <button onClick={e => { e.stopPropagation(); onPin() }} title={item.pinned ? "Unpin" : "Pin"} style={{ background: "none", border: "none", color: item.pinned ? "#F59E0B" : "#CBD5E1", cursor: "pointer", fontSize: 14, padding: "0 2px" }}>
-                {item.pinned ? "★" : "☆"}
+              <button onClick={e => { e.stopPropagation(); onPin() }} title={item.pinned ? "Unpin" : "Pin"} style={{ background: "none", border: "none", cursor: "pointer", fontSize: 13, padding: "0 2px", opacity: item.pinned ? 1 : 0.4 }}>
+                📌
               </button>
             )}
             {hovered && (
