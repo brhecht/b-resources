@@ -270,6 +270,16 @@ export default function Vault({ user }) {
     }
   }
 
+  async function handleTagsChange(itemId, newTags) {
+    try {
+      await updateDoc(doc(db, "vault", itemId), { tags: newTags, updatedAt: serverTimestamp() })
+      setAssets(prev => prev.map(a => a.id === itemId ? { ...a, tags: newTags } : a))
+      setViewAsset(prev => prev?.id === itemId ? { ...prev, tags: newTags } : prev)
+    } catch (e) {
+      console.error("Tag update error:", e)
+    }
+  }
+
   function handleDrop(e) {
     e.preventDefault()
     setDragOver(false)
@@ -511,6 +521,8 @@ export default function Vault({ user }) {
             }}
             onAddGroup={() => { setEditingGroup(null); setShowGroupManager(true) }}
             onAddSubGroup={parentId => { setEditingGroup({ parentId }); setShowGroupManager(true) }}
+            onTagsChange={(item, newTags) => handleTagsChange(item.id, newTags)}
+            allTags={allTags}
             accentColor={ACCENT}
             borderColor={BORDER}
             mutedColor={MUTED}
@@ -649,8 +661,10 @@ export default function Vault({ user }) {
                 </span>
               )}
               {viewAsset.fileSize ? <span style={{ fontSize: 12, color: MUTED }}>{fmtSize(viewAsset.fileSize)}</span> : null}
-              {(viewAsset.tags || []).map(t => { const tc = getTagColor(t); return <span key={t} style={{ background: tc.bg, color: tc.text, padding: "2px 10px", borderRadius: 12, fontSize: 12 }}>{t}</span> })}
               {viewAsset.pinned && <span style={{ fontSize: 12, color: "#F59E0B" }}>📌 Pinned</span>}
+            </div>
+            <div style={{ marginBottom: 12 }} onClick={e => e.stopPropagation()}>
+              <TagInput tags={viewAsset.tags || []} onChange={tags => handleTagsChange(viewAsset.id, tags)} allTags={allTags} accentColor={ACCENT} />
             </div>
             {viewAsset.fileName && viewAsset.fileName !== (viewAsset.title || viewAsset.name) && (
               <div style={{ fontSize: 12, color: MUTED, marginBottom: 8, opacity: 0.7 }}>

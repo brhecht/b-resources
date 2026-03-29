@@ -1,5 +1,6 @@
 import { useState } from "react"
 import { getTagColor } from "./tagColors"
+import TagInput from "./TagInput"
 
 function displayTitle(item) {
   if (item.title) return item.title
@@ -36,6 +37,8 @@ export default function GroupKanban({
   onEditGroup,
   onAddGroup,
   onAddSubGroup,
+  onTagsChange,
+  allTags = [],
   accentColor = "#7B8FA8",
   borderColor = "#E2E8F0",
   mutedColor = "#6B7A99",
@@ -46,6 +49,7 @@ export default function GroupKanban({
   const [collapsedSubs, setCollapsedSubs] = useState({})
   const [menuOpen, setMenuOpen] = useState(null)
   const [hoveredCard, setHoveredCard] = useState(null)
+  const [editingTagsId, setEditingTagsId] = useState(null)
 
   const topGroups = groups.filter(g => !g.parentId).sort((a, b) => (a.order ?? 99) - (b.order ?? 99))
   const subGroupsByParent = {}
@@ -166,12 +170,20 @@ export default function GroupKanban({
             {item.description}
           </p>
         )}
-        {tags.length > 0 && (
-          <div style={{ display: "flex", gap: 3, flexWrap: "wrap" }}>
+        {editingTagsId === item.id && onTagsChange ? (
+          <div onClick={e => e.stopPropagation()} style={{ marginTop: 4 }}>
+            <TagInput tags={tags} onChange={newTags => onTagsChange(item, newTags)} allTags={allTags} accentColor={accentColor} />
+            <button onClick={() => setEditingTagsId(null)} style={{ background: "none", border: "none", fontSize: 10, color: mutedColor, cursor: "pointer", marginTop: 2 }}>Done</button>
+          </div>
+        ) : (
+          <div style={{ display: "flex", gap: 3, flexWrap: "wrap", alignItems: "center" }}>
             {tags.map(t => {
               const tc = getTagColor(t)
               return <span key={t} style={{ background: tc.bg, color: tc.text, fontSize: 9, padding: "1px 6px", borderRadius: 8 }}>{t}</span>
             })}
+            {onTagsChange && (
+              <button onClick={e => { e.stopPropagation(); setEditingTagsId(item.id) }} style={{ background: "none", border: `1px dashed ${borderColor}`, borderRadius: 8, fontSize: 10, color: mutedColor, cursor: "pointer", padding: "0 5px", lineHeight: "16px" }}>+</button>
+            )}
           </div>
         )}
         {(item.updatedAt || item.createdAt) && (

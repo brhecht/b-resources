@@ -265,6 +265,16 @@ export default function Library({ user }) {
     }
   }
 
+  async function handleTagsChange(itemId, newTags) {
+    try {
+      await updateDoc(doc(db, "library", itemId), { tags: newTags, updatedAt: serverTimestamp() })
+      setDocs(prev => prev.map(d => d.id === itemId ? { ...d, tags: newTags } : d))
+      setViewDoc(prev => prev?.id === itemId ? { ...prev, tags: newTags } : prev)
+    } catch (e) {
+      console.error("Tag update error:", e)
+    }
+  }
+
   function handleDrop(e) {
     e.preventDefault()
     setDragOver(false)
@@ -511,6 +521,8 @@ export default function Library({ user }) {
             }}
             onAddGroup={() => { setEditingGroup(null); setShowGroupManager(true) }}
             onAddSubGroup={parentId => { setEditingGroup({ parentId }); setShowGroupManager(true) }}
+            onTagsChange={(item, newTags) => handleTagsChange(item.id, newTags)}
+            allTags={allTags}
             accentColor={ACCENT}
             borderColor={BORDER}
             mutedColor={MUTED}
@@ -649,8 +661,10 @@ export default function Library({ user }) {
                   {groupMap[viewDoc.groupId].icon} {groupMap[viewDoc.groupId].name}
                 </span>
               )}
-              {(viewDoc.tags || []).map(t => { const tc = getTagColor(t); return <span key={t} style={{ background: tc.bg, color: tc.text, padding: "2px 10px", borderRadius: 12, fontSize: 12 }}>{t}</span> })}
               {viewDoc.pinned && <span style={{ fontSize: 12, color: "#F59E0B" }}>📌 Pinned</span>}
+            </div>
+            <div style={{ marginBottom: 12 }} onClick={e => e.stopPropagation()}>
+              <TagInput tags={viewDoc.tags || []} onChange={tags => handleTagsChange(viewDoc.id, tags)} allTags={allTags} accentColor={ACCENT} />
             </div>
             {(viewDoc.createdAt || viewDoc.updatedAt) && (
               <div style={{ fontSize: 12, color: MUTED, marginBottom: 12, display: "flex", gap: 16 }}>
