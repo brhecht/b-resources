@@ -56,6 +56,26 @@ function fmtSize(bytes) {
   return (bytes / (1024 * 1024)).toFixed(1) + " MB"
 }
 
+function fmtDate(ts) {
+  if (!ts) return ""
+  const d = ts.toDate ? ts.toDate() : new Date(ts)
+  return d.toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" })
+}
+
+function timeAgo(ts) {
+  if (!ts) return ""
+  const d = ts.toDate ? ts.toDate() : new Date(ts)
+  const diff = Date.now() - d.getTime()
+  const mins = Math.floor(diff / 60000)
+  if (mins < 1) return "just now"
+  if (mins < 60) return `${mins}m ago`
+  const hrs = Math.floor(mins / 60)
+  if (hrs < 24) return `${hrs}h ago`
+  const days = Math.floor(hrs / 24)
+  if (days < 7) return `${days}d ago`
+  return fmtDate(ts)
+}
+
 function FilePreview({ fileUrl, fileType, fileName }) {
   if (!fileUrl) return null
   if (fileType?.startsWith("image/")) {
@@ -588,6 +608,12 @@ export default function Vault({ user }) {
               {(viewAsset.tags || []).map(t => <span key={t} style={{ background: "#F5F0EB", color: MUTED, padding: "2px 10px", borderRadius: 12, fontSize: 12 }}>{t}</span>)}
               {viewAsset.pinned && <span style={{ fontSize: 12, color: "#F59E0B" }}>★ Pinned</span>}
             </div>
+            {(viewAsset.createdAt || viewAsset.updatedAt) && (
+              <div style={{ fontSize: 12, color: MUTED, marginBottom: 12, display: "flex", gap: 16 }}>
+                {viewAsset.createdAt && <span>Created {fmtDate(viewAsset.createdAt)}</span>}
+                {viewAsset.updatedAt && <span>Updated {fmtDate(viewAsset.updatedAt)}</span>}
+              </div>
+            )}
             {viewAsset.description && (
               <div style={{ marginBottom: 20 }}>
                 <MarkdownRenderer content={viewAsset.description} accentColor={ACCENT} />
@@ -668,9 +694,15 @@ export default function Vault({ user }) {
 }
 
 function Modal({ children, onClose, title, accent, wide }) {
+  useEffect(() => {
+    const handler = e => { if (e.key === "Escape") onClose() }
+    window.addEventListener("keydown", handler)
+    return () => window.removeEventListener("keydown", handler)
+  }, [onClose])
+
   return (
-    <div style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.4)", display: "flex", alignItems: "center", justifyContent: "center", zIndex: 1000, padding: 20 }}>
-      <div style={{ background: "#fff", borderRadius: 16, padding: 32, width: "100%", maxWidth: wide ? 700 : 520, maxHeight: "90vh", overflowY: "auto" }}>
+    <div onClick={onClose} style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.4)", display: "flex", alignItems: "center", justifyContent: "center", zIndex: 1000, padding: 20 }}>
+      <div onClick={e => e.stopPropagation()} style={{ background: "#fff", borderRadius: 16, padding: 32, width: "100%", maxWidth: wide ? 700 : 520, maxHeight: "90vh", overflowY: "auto" }}>
         <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 24 }}>
           <h2 style={{ margin: 0, fontSize: 22, fontWeight: 700 }}>{title}</h2>
           <button onClick={onClose} style={{ background: "none", border: "none", fontSize: 24, cursor: "pointer", color: "#94A3B8" }}>×</button>

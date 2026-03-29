@@ -12,7 +12,7 @@ export default function TagInput({ tags = [], onChange, allTags = [], accentColo
     ? allTags
         .filter(t => t.includes(input.trim().toLowerCase()) && !tags.includes(t))
         .slice(0, 8)
-    : []
+    : allTags.filter(t => !tags.includes(t)).slice(0, 12)
 
   function addTag(raw) {
     const tag = raw.trim().toLowerCase()
