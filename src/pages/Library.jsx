@@ -22,6 +22,7 @@ import GroupKanban from "../components/GroupKanban"
 import GroupManager from "../components/GroupManager"
 import ListView from "../components/ListView"
 import ResourceCard from "../components/ResourceCard"
+import SidePanel from "../components/SidePanel"
 import MarkdownRenderer from "../components/MarkdownRenderer"
 import { getTagColor } from "../components/tagColors"
 
@@ -128,6 +129,7 @@ export default function Library({ user }) {
   const [showGroupManager, setShowGroupManager] = useState(false)
   const [editingGroup, setEditingGroup] = useState(null)
   const [addToGroupId, setAddToGroupId] = useState(null)
+  const [panelDoc, setPanelDoc] = useState(null)
 
   const [file, setFile] = useState(null)
   const [progress, setProgress] = useState(0)
@@ -261,6 +263,7 @@ export default function Library({ user }) {
     try {
       await updateDoc(doc(db, "library", item.id), { pinned: newPinned, updatedAt: serverTimestamp() })
       setDocs(prev => prev.map(d => d.id === item.id ? { ...d, pinned: newPinned } : d))
+      setPanelDoc(prev => prev?.id === item.id ? { ...prev, pinned: newPinned } : prev)
     } catch (e) {
       console.error("Pin error:", e)
     }
@@ -271,6 +274,7 @@ export default function Library({ user }) {
       await updateDoc(doc(db, "library", itemId), { tags: newTags, updatedAt: serverTimestamp() })
       setDocs(prev => prev.map(d => d.id === itemId ? { ...d, tags: newTags } : d))
       setViewDoc(prev => prev?.id === itemId ? { ...prev, tags: newTags } : prev)
+      setPanelDoc(prev => prev?.id === itemId ? { ...prev, tags: newTags } : prev)
     } catch (e) {
       console.error("Tag update error:", e)
     }
@@ -281,6 +285,7 @@ export default function Library({ user }) {
       await updateDoc(doc(db, "library", itemId), { description: newDescription, updatedAt: serverTimestamp() })
       setDocs(prev => prev.map(d => d.id === itemId ? { ...d, description: newDescription } : d))
       setViewDoc(prev => prev?.id === itemId ? { ...prev, description: newDescription } : prev)
+      setPanelDoc(prev => prev?.id === itemId ? { ...prev, description: newDescription } : prev)
     } catch (e) {
       console.error("Notes update error:", e)
     }
@@ -306,6 +311,7 @@ export default function Library({ user }) {
         await updateDoc(doc(db, "library", docId), { summary })
         setDocs(prev => prev.map(d => d.id === docId ? { ...d, summary } : d))
         setViewDoc(prev => prev?.id === docId ? { ...prev, summary } : prev)
+        setPanelDoc(prev => prev?.id === docId ? { ...prev, summary } : prev)
       }
     } catch (e) { console.error("Summary generation failed:", e) }
   }
@@ -490,7 +496,7 @@ export default function Library({ user }) {
             <span style={{ fontSize: 20, fontWeight: 700, color: TEXT }}>Library</span>
           </div>
           <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
-            <ViewSwitcher view={view} onSwitch={setView} accentColor={ACCENT} />
+            <ViewSwitcher view={view} onSwitch={v => { setView(v); setPanelDoc(null) }} accentColor={ACCENT} />
             <button onClick={() => { setShowGroupManager(true); setEditingGroup(null) }} style={{ background: ACCENT + "18", color: ACCENT, border: `1px solid ${ACCENT}44`, borderRadius: 8, padding: "7px 14px", cursor: "pointer", fontSize: 13, fontWeight: 600 }}>
               Manage Groups
             </button>
@@ -501,7 +507,7 @@ export default function Library({ user }) {
         </div>
       </div>
 
-      <div style={{ maxWidth: 1200, margin: "0 auto", padding: "32px 32px" }}>
+      <div style={{ maxWidth: panelDoc ? "none" : 1200, margin: "0 auto", padding: "32px 32px" }}>
         <input type="text" placeholder="Search documents..." value={search} onChange={e => setSearch(e.target.value)}
           style={{ width: "100%", padding: "10px 16px", border: `1px solid ${BORDER}`, borderRadius: 8, fontSize: 14, background: CARD_BG, color: TEXT, boxSizing: "border-box", marginBottom: 20, outline: "none" }} />
 
@@ -518,27 +524,51 @@ export default function Library({ user }) {
         ) : filtered.length === 0 ? (
           <div style={{ textAlign: "center", color: MUTED, padding: 60 }}>No documents found.</div>
         ) : view === "group" ? (
-          <GroupKanban
-            items={filtered}
-            groups={groups}
-            onGroupChange={handleGroupChange}
-            onView={item => setViewDoc(item)}
-            onEdit={item => openEdit(item)}
-            onDelete={item => handleDelete(item.id)}
-            onPin={item => handlePin(item)}
-            onAddToGroup={groupId => { setAddToGroupId(groupId); setForm(f => ({ ...f, groupId })); setShowAdd(true) }}
-            onEditGroup={group => {
-              if (group._delete) { handleDeleteGroup(group.id) } else { setEditingGroup(group); setShowGroupManager(true) }
-            }}
-            onAddGroup={() => { setEditingGroup(null); setShowGroupManager(true) }}
-            onAddSubGroup={parentId => { setEditingGroup({ parentId }); setShowGroupManager(true) }}
-            onTagsChange={(item, newTags) => handleTagsChange(item.id, newTags)}
-            allTags={allTags}
-            accentColor={ACCENT}
-            borderColor={BORDER}
-            mutedColor={MUTED}
-            userEmail={user?.email}
-          />
+          <div style={{ display: "flex", gap: 0, height: panelDoc ? "calc(100vh - 240px)" : "auto" }}>
+            <div style={{ flex: 1, minWidth: 0, overflowX: "auto" }}>
+              <GroupKanban
+                items={filtered}
+                groups={groups}
+                onGroupChange={handleGroupChange}
+                onView={item => setPanelDoc(item)}
+                onEdit={item => openEdit(item)}
+                onDelete={item => handleDelete(item.id)}
+                onPin={item => handlePin(item)}
+                onAddToGroup={groupId => { setAddToGroupId(groupId); setForm(f => ({ ...f, groupId })); setShowAdd(true) }}
+                onEditGroup={group => {
+                  if (group._delete) { handleDeleteGroup(group.id) } else { setEditingGroup(group); setShowGroupManager(true) }
+                }}
+                onAddGroup={() => { setEditingGroup(null); setShowGroupManager(true) }}
+                onAddSubGroup={parentId => { setEditingGroup({ parentId }); setShowGroupManager(true) }}
+                onTagsChange={(item, newTags) => handleTagsChange(item.id, newTags)}
+                allTags={allTags}
+                accentColor={ACCENT}
+                borderColor={BORDER}
+                mutedColor={MUTED}
+                userEmail={user?.email}
+              />
+            </div>
+            {panelDoc && (
+              <SidePanel
+                item={panelDoc}
+                onClose={() => setPanelDoc(null)}
+                onEdit={item => { setPanelDoc(null); openEdit(item) }}
+                onDelete={item => { setPanelDoc(null); handleDelete(item.id) }}
+                onPin={item => handlePin(item)}
+                onTagsChange={handleTagsChange}
+                onNotesChange={handleNotesChange}
+                onGenerateSummary={item => generateSummary(item.id, item.title, item.description, item.fileName, item.fileType)}
+                allTags={allTags}
+                groupMap={groupMap}
+                collectionName="library"
+                user={user}
+                accentColor={ACCENT}
+                borderColor={BORDER}
+                mutedColor={MUTED}
+                MessagesComponent={CollapsibleMessages}
+              />
+            )}
+          </div>
         ) : view === "list" ? (
           <ListView
             items={filtered}

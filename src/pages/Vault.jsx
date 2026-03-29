@@ -22,6 +22,7 @@ import GroupKanban from "../components/GroupKanban"
 import GroupManager from "../components/GroupManager"
 import ListView from "../components/ListView"
 import ResourceCard from "../components/ResourceCard"
+import SidePanel from "../components/SidePanel"
 import MarkdownRenderer from "../components/MarkdownRenderer"
 import { getTagColor } from "../components/tagColors"
 
@@ -141,6 +142,7 @@ export default function Vault({ user }) {
   const [showGroupManager, setShowGroupManager] = useState(false)
   const [editingGroup, setEditingGroup] = useState(null)
   const [addToGroupId, setAddToGroupId] = useState(null)
+  const [panelAsset, setPanelAsset] = useState(null)
 
   const [editFile, setEditFile] = useState(null)
   const [editProgress, setEditProgress] = useState(0)
@@ -266,6 +268,7 @@ export default function Vault({ user }) {
     try {
       await updateDoc(doc(db, "vault", item.id), { pinned: newPinned, updatedAt: serverTimestamp() })
       setAssets(prev => prev.map(a => a.id === item.id ? { ...a, pinned: newPinned } : a))
+      setPanelAsset(prev => prev?.id === item.id ? { ...prev, pinned: newPinned } : prev)
     } catch (e) {
       console.error("Pin error:", e)
     }
@@ -276,6 +279,7 @@ export default function Vault({ user }) {
       await updateDoc(doc(db, "vault", itemId), { tags: newTags, updatedAt: serverTimestamp() })
       setAssets(prev => prev.map(a => a.id === itemId ? { ...a, tags: newTags } : a))
       setViewAsset(prev => prev?.id === itemId ? { ...prev, tags: newTags } : prev)
+      setPanelAsset(prev => prev?.id === itemId ? { ...prev, tags: newTags } : prev)
     } catch (e) {
       console.error("Tag update error:", e)
     }
@@ -286,6 +290,7 @@ export default function Vault({ user }) {
       await updateDoc(doc(db, "vault", itemId), { description: newDescription, updatedAt: serverTimestamp() })
       setAssets(prev => prev.map(a => a.id === itemId ? { ...a, description: newDescription } : a))
       setViewAsset(prev => prev?.id === itemId ? { ...prev, description: newDescription } : prev)
+      setPanelAsset(prev => prev?.id === itemId ? { ...prev, description: newDescription } : prev)
     } catch (e) {
       console.error("Notes update error:", e)
     }
@@ -311,6 +316,7 @@ export default function Vault({ user }) {
         await updateDoc(doc(db, "vault", docId), { summary })
         setAssets(prev => prev.map(a => a.id === docId ? { ...a, summary } : a))
         setViewAsset(prev => prev?.id === docId ? { ...prev, summary } : prev)
+        setPanelAsset(prev => prev?.id === docId ? { ...prev, summary } : prev)
       }
     } catch (e) { console.error("Summary generation failed:", e) }
   }
@@ -490,7 +496,7 @@ export default function Vault({ user }) {
             <span style={{ fontSize: 20, fontWeight: 700, color: TEXT }}>Vault</span>
           </div>
           <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
-            <ViewSwitcher view={view} onSwitch={setView} accentColor={ACCENT} />
+            <ViewSwitcher view={view} onSwitch={v => { setView(v); setPanelAsset(null) }} accentColor={ACCENT} />
             <button onClick={() => { setShowGroupManager(true); setEditingGroup(null) }} style={{ background: ACCENT + "18", color: ACCENT, border: `1px solid ${ACCENT}44`, borderRadius: 8, padding: "7px 14px", cursor: "pointer", fontSize: 13, fontWeight: 600 }}>
               Manage Groups
             </button>
@@ -501,7 +507,7 @@ export default function Vault({ user }) {
         </div>
       </div>
 
-      <div style={{ maxWidth: 1200, margin: "0 auto", padding: "32px" }}>
+      <div style={{ maxWidth: panelAsset ? "none" : 1200, margin: "0 auto", padding: "32px" }}>
         <input type="text" placeholder="Search assets..." value={search} onChange={e => setSearch(e.target.value)}
           style={{ width: "100%", padding: "10px 16px", border: `1px solid ${BORDER}`, borderRadius: 8, fontSize: 14, background: CARD_BG, boxSizing: "border-box", marginBottom: 20, outline: "none" }} />
 
@@ -518,27 +524,52 @@ export default function Vault({ user }) {
         ) : filtered.length === 0 ? (
           <div style={{ textAlign: "center", color: MUTED, padding: 60 }}>No assets found.</div>
         ) : view === "group" ? (
-          <GroupKanban
-            items={filtered}
-            groups={groups}
-            onGroupChange={handleGroupChange}
-            onView={item => setViewAsset(item)}
-            onEdit={item => openEdit(item)}
-            onDelete={item => handleDelete(item)}
-            onPin={item => handlePin(item)}
-            onAddToGroup={groupId => { setAddToGroupId(groupId); setForm(f => ({ ...f, groupId })); setShowAdd(true) }}
-            onEditGroup={group => {
-              if (group._delete) { handleDeleteGroup(group.id) } else { setEditingGroup(group); setShowGroupManager(true) }
-            }}
-            onAddGroup={() => { setEditingGroup(null); setShowGroupManager(true) }}
-            onAddSubGroup={parentId => { setEditingGroup({ parentId }); setShowGroupManager(true) }}
-            onTagsChange={(item, newTags) => handleTagsChange(item.id, newTags)}
-            allTags={allTags}
-            accentColor={ACCENT}
-            borderColor={BORDER}
-            mutedColor={MUTED}
-            userEmail={user?.email}
-          />
+          <div style={{ display: "flex", gap: 0, height: panelAsset ? "calc(100vh - 240px)" : "auto" }}>
+            <div style={{ flex: 1, minWidth: 0, overflowX: "auto" }}>
+              <GroupKanban
+                items={filtered}
+                groups={groups}
+                onGroupChange={handleGroupChange}
+                onView={item => setPanelAsset(item)}
+                onEdit={item => openEdit(item)}
+                onDelete={item => handleDelete(item)}
+                onPin={item => handlePin(item)}
+                onAddToGroup={groupId => { setAddToGroupId(groupId); setForm(f => ({ ...f, groupId })); setShowAdd(true) }}
+                onEditGroup={group => {
+                  if (group._delete) { handleDeleteGroup(group.id) } else { setEditingGroup(group); setShowGroupManager(true) }
+                }}
+                onAddGroup={() => { setEditingGroup(null); setShowGroupManager(true) }}
+                onAddSubGroup={parentId => { setEditingGroup({ parentId }); setShowGroupManager(true) }}
+                onTagsChange={(item, newTags) => handleTagsChange(item.id, newTags)}
+                allTags={allTags}
+                accentColor={ACCENT}
+                borderColor={BORDER}
+                mutedColor={MUTED}
+                userEmail={user?.email}
+              />
+            </div>
+            {panelAsset && (
+              <SidePanel
+                item={panelAsset}
+                onClose={() => setPanelAsset(null)}
+                onEdit={item => { setPanelAsset(null); openEdit(item) }}
+                onDelete={item => { setPanelAsset(null); handleDelete(item) }}
+                onPin={item => handlePin(item)}
+                onTagsChange={handleTagsChange}
+                onNotesChange={handleNotesChange}
+                onGenerateSummary={item => generateSummary(item.id, item.title || item.name, item.description, item.fileName, item.fileType)}
+                allTags={allTags}
+                groupMap={groupMap}
+                collectionName="vault"
+                user={user}
+                displayTitle={displayTitle}
+                accentColor={ACCENT}
+                borderColor={BORDER}
+                mutedColor={MUTED}
+                MessagesComponent={CollapsibleMessages}
+              />
+            )}
+          </div>
         ) : view === "list" ? (
           <ListView
             items={filtered}
