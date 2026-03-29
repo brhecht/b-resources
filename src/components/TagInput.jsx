@@ -89,7 +89,7 @@ export default function TagInput({ tags = [], onChange, allTags = [], accentColo
           onKeyDown={handleKeyDown}
           onFocus={() => setShowDropdown(true)}
           onBlur={() => setTimeout(() => setShowDropdown(false), 150)}
-          placeholder={tags.length === 0 ? "Add tags..." : ""}
+          placeholder={tags.length === 0 ? "Add tags (e.g. investor-facing, draft, template)..." : ""}
           style={{
             border: "none",
             outline: "none",

@@ -36,6 +36,9 @@ export default function ListView({ items, groups, onView, onEdit, onDelete, onPi
   }
 
   const sorted = [...items].sort((a, b) => {
+    // Pinned items always first
+    if (a.pinned && !b.pinned) return -1
+    if (!a.pinned && b.pinned) return 1
     const dir = sortDir === "asc" ? 1 : -1
     const aVal = a[sortKey] || ""
     const bVal = b[sortKey] || ""

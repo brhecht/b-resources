@@ -267,6 +267,22 @@ export default function Vault({ user }) {
     if (dropped) setFile(dropped)
   }
 
+  async function generateSummary(docId, title, description, fileName, fileType) {
+    try {
+      const resp = await fetch("/api/generate-summary", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ title, description, fileName, fileType }),
+      })
+      if (!resp.ok) return
+      const { summary } = await resp.json()
+      if (summary) {
+        await updateDoc(doc(db, "vault", docId), { summary })
+        setAssets(prev => prev.map(a => a.id === docId ? { ...a, summary } : a))
+      }
+    } catch (e) { console.error("Summary generation failed:", e) }
+  }
+
   async function handleUpload(e) {
     e.preventDefault()
     if (!file) return alert("Please select a file.")
@@ -300,6 +316,7 @@ export default function Vault({ user }) {
       }
       const docRef = await addDoc(collection(db, "vault"), newAsset)
       setAssets(prev => [{ id: docRef.id, ...newAsset, createdAt: new Date() }, ...prev])
+      generateSummary(docRef.id, form.name || file.name, form.description, file.name, file.type)
       setForm({ name: "", description: "", tags: [], groupId: "", subGroupId: "" })
       setFile(null)
       if (fileRef.current) fileRef.current.value = ""
@@ -485,19 +502,6 @@ export default function Vault({ user }) {
             borderColor={BORDER}
             mutedColor={MUTED}
           />
-        ) : view === "pinned" ? (
-          <div>
-            <h3 style={{ fontSize: 16, fontWeight: 600, color: MUTED, marginBottom: 16 }}>Pinned Assets</h3>
-            {filtered.filter(a => a.pinned).length === 0 ? (
-              <div style={{ textAlign: "center", color: MUTED, padding: 40, fontSize: 14 }}>No pinned items. Click the star on any asset to pin it.</div>
-            ) : (
-              <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(280px, 1fr))", gap: 18 }}>
-                {filtered.filter(a => a.pinned).map(a => (
-                  <ResourceCard key={a.id} item={a} group={groupMap[a.groupId]} onView={() => setViewAsset(a)} onEdit={() => openEdit(a)} onDelete={() => handleDelete(a)} onPin={() => handlePin(a)} accentColor={ACCENT} borderColor={BORDER} mutedColor={MUTED} />
-                ))}
-              </div>
-            )}
-          </div>
         ) : view === "list" ? (
           <ListView
             items={filtered}
@@ -511,10 +515,35 @@ export default function Vault({ user }) {
             mutedColor={MUTED}
           />
         ) : (
-          <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(280px, 1fr))", gap: 18 }}>
-            {filtered.map(a => (
-              <ResourceCard key={a.id} item={a} group={groupMap[a.groupId]} onView={() => setViewAsset(a)} onEdit={() => openEdit(a)} onDelete={() => handleDelete(a)} onPin={() => handlePin(a)} accentColor={ACCENT} borderColor={BORDER} mutedColor={MUTED} />
-            ))}
+          <div>
+            {filtered.some(a => a.pinned) && (
+              <>
+                <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 12 }}>
+                  <span style={{ fontSize: 13, fontWeight: 600, color: "#F59E0B" }}>★ Pinned</span>
+                  <div style={{ flex: 1, height: 1, background: BORDER }} />
+                </div>
+                <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(280px, 1fr))", gap: 18, marginBottom: 24 }}>
+                  {filtered.filter(a => a.pinned).map(a => (
+                    <ResourceCard key={a.id} item={a} group={groupMap[a.groupId]} onView={() => setViewAsset(a)} onEdit={() => openEdit(a)} onDelete={() => handleDelete(a)} onPin={() => handlePin(a)} accentColor={ACCENT} borderColor={BORDER} mutedColor={MUTED} />
+                  ))}
+                </div>
+              </>
+            )}
+            {filtered.some(a => !a.pinned) && (
+              <>
+                {filtered.some(a => a.pinned) && (
+                  <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 12 }}>
+                    <span style={{ fontSize: 13, fontWeight: 600, color: MUTED }}>All</span>
+                    <div style={{ flex: 1, height: 1, background: BORDER }} />
+                  </div>
+                )}
+                <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(280px, 1fr))", gap: 18 }}>
+                  {filtered.filter(a => !a.pinned).map(a => (
+                    <ResourceCard key={a.id} item={a} group={groupMap[a.groupId]} onView={() => setViewAsset(a)} onEdit={() => openEdit(a)} onDelete={() => handleDelete(a)} onPin={() => handlePin(a)} accentColor={ACCENT} borderColor={BORDER} mutedColor={MUTED} />
+                  ))}
+                </div>
+              </>
+            )}
           </div>
         )}
       </div>
@@ -612,6 +641,11 @@ export default function Vault({ user }) {
               <div style={{ fontSize: 12, color: MUTED, marginBottom: 12, display: "flex", gap: 16 }}>
                 {viewAsset.createdAt && <span>Created {fmtDate(viewAsset.createdAt)}</span>}
                 {viewAsset.updatedAt && <span>Updated {fmtDate(viewAsset.updatedAt)}</span>}
+              </div>
+            )}
+            {viewAsset.summary && (
+              <div style={{ background: ACCENT + "0A", border: `1px solid ${ACCENT}22`, borderRadius: 8, padding: "10px 14px", marginBottom: 16, fontSize: 13, color: MUTED, lineHeight: 1.5, fontStyle: "italic" }}>
+                {viewAsset.summary}
               </div>
             )}
             {viewAsset.description && (

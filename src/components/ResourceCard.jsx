@@ -42,6 +42,7 @@ export default function ResourceCard({ item, group, onView, onEdit, onDelete, on
       onMouseEnter={() => setHovered(true)}
       onMouseLeave={() => setHovered(false)}
       onClick={onView}
+      title={item.summary || ""}
       style={{
         background: "#fff",
         border: `1px solid ${hovered ? accentColor : borderColor}`,
@@ -51,6 +52,7 @@ export default function ResourceCard({ item, group, onView, onEdit, onDelete, on
         transform: hovered ? "translateY(-2px)" : "none",
         boxShadow: hovered ? `0 4px 16px ${accentColor}1A` : "none",
         cursor: "pointer",
+        position: "relative",
       }}
     >
       {isImage && item.fileUrl && (

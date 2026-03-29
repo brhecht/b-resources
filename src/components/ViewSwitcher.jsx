@@ -2,7 +2,6 @@ export default function ViewSwitcher({ view = "group", onSwitch, accentColor = "
   const tabs = [
     { key: "group", label: "By Group", icon: "▦" },
     { key: "grid", label: "All Resources", icon: "⊞" },
-    { key: "pinned", label: "Quick Access", icon: "⭐" },
     { key: "list", label: "List", icon: "☰" },
   ]
 
