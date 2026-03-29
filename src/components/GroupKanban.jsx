@@ -173,16 +173,16 @@ export default function GroupKanban({
         {editingTagsId === item.id && onTagsChange ? (
           <div onClick={e => e.stopPropagation()} style={{ marginTop: 4 }}>
             <TagInput tags={tags} onChange={newTags => onTagsChange(item, newTags)} allTags={allTags} accentColor={accentColor} />
-            <button onClick={() => setEditingTagsId(null)} style={{ background: "none", border: "none", fontSize: 10, color: mutedColor, cursor: "pointer", marginTop: 2 }}>Done</button>
+            <button onClick={() => setEditingTagsId(null)} style={{ background: accentColor + "12", border: "none", fontSize: 10, color: accentColor, cursor: "pointer", marginTop: 4, padding: "2px 8px", borderRadius: 6 }}>Done</button>
           </div>
         ) : (
-          <div style={{ display: "flex", gap: 3, flexWrap: "wrap", alignItems: "center" }}>
+          <div style={{ display: "flex", gap: 4, flexWrap: "wrap", alignItems: "center", marginTop: tags.length > 0 ? 0 : 2 }}>
             {tags.map(t => {
               const tc = getTagColor(t)
-              return <span key={t} style={{ background: tc.bg, color: tc.text, fontSize: 9, padding: "1px 6px", borderRadius: 8 }}>{t}</span>
+              return <span key={t} style={{ background: tc.bg, color: tc.text, fontSize: 10, padding: "2px 7px", borderRadius: 8 }}>{t}</span>
             })}
             {onTagsChange && (
-              <button onClick={e => { e.stopPropagation(); setEditingTagsId(item.id) }} style={{ background: "none", border: `1px dashed ${borderColor}`, borderRadius: 8, fontSize: 10, color: mutedColor, cursor: "pointer", padding: "0 5px", lineHeight: "16px" }}>+</button>
+              <button onClick={e => { e.stopPropagation(); setEditingTagsId(item.id) }} style={{ background: accentColor + "10", border: `1px solid ${accentColor}30`, borderRadius: 8, fontSize: 10, color: accentColor, cursor: "pointer", padding: "2px 8px", lineHeight: "14px", fontWeight: 500 }}>{tags.length > 0 ? "+" : "+ tag"}</button>
             )}
           </div>
         )}
