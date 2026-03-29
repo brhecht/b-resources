@@ -30,6 +30,7 @@ export default function GroupKanban({
   onGroupChange,
   onSubGroupChange,
   onView,
+  onPreview,
   onEdit,
   onDelete,
   onPin,
@@ -159,9 +160,15 @@ export default function GroupKanban({
               </div>
             )}
           </div>
-          <div style={{ display: "flex", gap: 2, flexShrink: 0 }} onClick={e => e.stopPropagation()}>
-            {onPin && (item.pinned || false) && (
-              <button onClick={() => onPin(item)} style={{ background: "none", border: "none", cursor: "pointer", fontSize: 12, padding: 0 }}>📌</button>
+          <div style={{ display: "flex", gap: 4, flexShrink: 0, alignItems: "center" }} onClick={e => e.stopPropagation()}>
+            {onPin && (
+              <button onClick={() => onPin(item)} title={item.pinned ? "Unpin" : "Pin"} style={{ background: "none", border: "none", cursor: "pointer", fontSize: 12, padding: 0, opacity: item.pinned ? 1 : 0.3 }}>{item.pinned ? "📌" : "📌"}</button>
+            )}
+            {onPreview && item.fileUrl && (
+              <button onClick={() => onPreview(item)} title="Preview" style={{ background: "none", border: "none", cursor: "pointer", fontSize: 12, padding: "0 2px", opacity: 0.5 }}>👁</button>
+            )}
+            {item.fileUrl && (
+              <a href={item.fileUrl} download={item.fileName || true} onClick={e => e.stopPropagation()} title="Download" style={{ fontSize: 12, textDecoration: "none", opacity: 0.4, lineHeight: 1, padding: "0 2px" }}>⬇</a>
             )}
           </div>
         </div>

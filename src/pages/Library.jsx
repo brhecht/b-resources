@@ -289,6 +289,23 @@ export default function Library({ user }) {
     }
   }
 
+  async function handleTitleChange(itemId, newTitle) {
+    try {
+      await updateDoc(doc(db, "library", itemId), { title: newTitle, updatedAt: serverTimestamp() })
+      setDocs(prev => prev.map(d => d.id === itemId ? { ...d, title: newTitle } : d))
+      setViewDoc(prev => prev?.id === itemId ? { ...prev, title: newTitle } : prev)
+      setPanelDoc(prev => prev?.id === itemId ? { ...prev, title: newTitle } : prev)
+    } catch (e) { console.error("Title update error:", e) }
+  }
+
+  async function handleGroupChangeInModal(itemId, newGroupId, newSubGroupId) {
+    try {
+      await updateDoc(doc(db, "library", itemId), { groupId: newGroupId || "", subGroupId: newSubGroupId || "", updatedAt: serverTimestamp() })
+      setDocs(prev => prev.map(d => d.id === itemId ? { ...d, groupId: newGroupId || "", subGroupId: newSubGroupId || "" } : d))
+      setViewDoc(prev => prev?.id === itemId ? { ...prev, groupId: newGroupId || "", subGroupId: newSubGroupId || "" } : prev)
+    } catch (e) { console.error("Group update error:", e) }
+  }
+
   async function handleNotesChange(itemId, newDescription) {
     try {
       await updateDoc(doc(db, "library", itemId), { description: newDescription, updatedAt: serverTimestamp() })
@@ -539,7 +556,8 @@ export default function Library({ user }) {
                 items={filtered}
                 groups={groups}
                 onGroupChange={handleGroupChange}
-                onView={item => setPanelDoc(item)}
+                onView={item => setViewDoc(item)}
+                onPreview={item => setPanelDoc(item)}
                 onEdit={item => openEdit(item)}
                 onDelete={item => handleDelete(item.id)}
                 onPin={item => handlePin(item)}
@@ -702,27 +720,42 @@ export default function Library({ user }) {
         </Modal>
       )}
 
-      {/* VIEW MODAL */}
+      {/* VIEW MODAL — single editing surface */}
       {viewDoc && (
-        <Modal onClose={() => setViewDoc(null)} title={viewDoc.title} accent={ACCENT} wide>
+        <Modal onClose={() => setViewDoc(null)} title="" accent={ACCENT} wide>
           <div>
-            <div style={{ display: "flex", gap: 8, marginBottom: 16, flexWrap: "wrap" }}>
-              {groupMap[viewDoc.groupId] && (
-                <span style={{ background: groupMap[viewDoc.groupId].color + "22", color: groupMap[viewDoc.groupId].color, padding: "2px 10px", borderRadius: 12, fontSize: 12, fontWeight: 600 }}>
-                  {groupMap[viewDoc.groupId].icon} {groupMap[viewDoc.groupId].name}
-                </span>
-              )}
+            {/* Editable title */}
+            <EditableTitle value={displayTitle(viewDoc)} onSave={newTitle => handleTitleChange(viewDoc.id, newTitle)} />
+
+            {/* Group — editable dropdown */}
+            <div style={{ marginBottom: 12 }}>
+              <GroupSelect
+                value={viewDoc.groupId || ""}
+                onChange={v => handleGroupChangeInModal(viewDoc.id, v, "")}
+                subValue={viewDoc.subGroupId || ""}
+                onSubChange={v => handleGroupChangeInModal(viewDoc.id, viewDoc.groupId, v)}
+              />
+            </div>
+
+            {/* Metadata */}
+            <div style={{ display: "flex", gap: 8, marginBottom: 12, flexWrap: "wrap", alignItems: "center" }}>
               {viewDoc.pinned && <span style={{ fontSize: 12, color: "#F59E0B" }}>📌 Pinned</span>}
             </div>
+
+            {/* Tags — editable */}
             <div style={{ marginBottom: 12 }} onClick={e => e.stopPropagation()}>
               <TagInput tags={viewDoc.tags || []} onChange={tags => handleTagsChange(viewDoc.id, tags)} allTags={allTags} accentColor={ACCENT} />
             </div>
+
+            {/* Dates */}
             {(viewDoc.createdAt || viewDoc.updatedAt) && (
               <div style={{ fontSize: 12, color: MUTED, marginBottom: 12, display: "flex", gap: 16 }}>
                 {viewDoc.createdAt && <span>Created {fmtDate(viewDoc.createdAt)}</span>}
                 {viewDoc.updatedAt && <span>Updated {fmtDate(viewDoc.updatedAt)}</span>}
               </div>
             )}
+
+            {/* AI Summary */}
             {viewDoc.summary ? (
               <div style={{ background: ACCENT + "0A", border: `1px solid ${ACCENT}22`, borderRadius: 8, padding: "10px 14px", marginBottom: 16, fontSize: 13, color: MUTED, lineHeight: 1.5, fontStyle: "italic" }}>
                 {viewDoc.summary}
@@ -732,7 +765,11 @@ export default function Library({ user }) {
                 ✨ Generate AI Summary
               </button>
             )}
+
+            {/* Notes — editable */}
             <InlineNotes value={viewDoc.description || ""} onSave={text => handleNotesChange(viewDoc.id, text)} accentColor={ACCENT} mutedColor={MUTED} />
+
+            {/* File preview + download */}
             <FilePreview fileUrl={viewDoc.fileUrl} fileType={viewDoc.fileType} fileName={viewDoc.fileName} />
             {viewDoc.fileUrl && (
               <a href={viewDoc.fileUrl} target="_blank" rel="noopener noreferrer"
@@ -740,15 +777,21 @@ export default function Library({ user }) {
                 {fileIcon(viewDoc.fileType)} {viewDoc.fileName || "Download attachment"} {viewDoc.fileSize ? `(${fmtSize(viewDoc.fileSize)})` : ""}
               </a>
             )}
+
+            {/* Inline content */}
             {viewDoc.content && (
               <div style={{ background: BG, padding: 20, borderRadius: 8, maxHeight: 400, overflowY: "auto" }}>
                 <MarkdownRenderer content={viewDoc.content} accentColor={ACCENT} />
               </div>
             )}
             {!viewDoc.content && !viewDoc.fileUrl && <p style={{ color: MUTED, fontStyle: "italic" }}>No content.</p>}
+
+            {/* Messages */}
             <CollapsibleMessages collectionName="library" docId={viewDoc.id} user={user} resourceTitle={viewDoc.title} accentColor={ACCENT} />
+
+            {/* Action buttons */}
             <div style={{ display: "flex", gap: 10, marginTop: 20 }}>
-              <button onClick={() => openEdit(viewDoc)} style={{ background: ACCENT + "18", color: ACCENT, border: `1px solid ${ACCENT}44`, borderRadius: 8, padding: "8px 16px", cursor: "pointer", fontSize: 13, fontWeight: 600 }}>✏️ Edit</button>
+              <button onClick={() => openEdit(viewDoc)} style={{ background: ACCENT + "18", color: ACCENT, border: `1px solid ${ACCENT}44`, borderRadius: 8, padding: "8px 16px", cursor: "pointer", fontSize: 13, fontWeight: 600 }}>✏️ Edit Content</button>
               <button onClick={() => handlePin(viewDoc)} style={{ background: viewDoc.pinned ? "#FEF3C7" : "#F9FAFB", color: viewDoc.pinned ? "#D97706" : MUTED, border: `1px solid ${viewDoc.pinned ? "#FDE68A" : BORDER}`, borderRadius: 8, padding: "8px 16px", cursor: "pointer", fontSize: 13 }}>
                 {viewDoc.pinned ? "📌 Unpin" : "📌 Pin"}
               </button>
@@ -829,14 +872,28 @@ function Modal({ children, onClose, title, accent, wide }) {
   return (
     <div onClick={onClose} style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.4)", display: "flex", alignItems: "center", justifyContent: "center", zIndex: 1000, padding: 20 }}>
       <div onClick={e => e.stopPropagation()} style={{ background: "#fff", borderRadius: 16, padding: 32, width: "100%", maxWidth: wide ? 700 : 520, maxHeight: "90vh", overflowY: "auto" }}>
-        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 24 }}>
-          <h2 style={{ margin: 0, fontSize: 22, fontWeight: 700 }}>{title}</h2>
+        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: title ? 24 : 8 }}>
+          {title ? <h2 style={{ margin: 0, fontSize: 22, fontWeight: 700 }}>{title}</h2> : <div />}
           <button onClick={onClose} style={{ background: "none", border: "none", fontSize: 24, cursor: "pointer", color: "#94A3B8" }}>×</button>
         </div>
         {children}
       </div>
     </div>
   )
+}
+
+function EditableTitle({ value, onSave }) {
+  const [editing, setEditing] = useState(false)
+  const [text, setText] = useState(value)
+  useEffect(() => { setText(value) }, [value])
+  function handleBlur() {
+    setEditing(false)
+    if (text.trim() && text.trim() !== value) onSave(text.trim())
+  }
+  if (editing) {
+    return <input autoFocus value={text} onChange={e => setText(e.target.value)} onBlur={handleBlur} onKeyDown={e => { if (e.key === "Enter") e.target.blur(); if (e.key === "Escape") { setText(value); setEditing(false) } }} style={{ width: "100%", fontSize: 22, fontWeight: 700, border: "none", borderBottom: "2px solid #7B8FA8", outline: "none", padding: "0 0 4px", marginBottom: 8, fontFamily: "inherit", boxSizing: "border-box" }} />
+  }
+  return <h2 onClick={() => setEditing(true)} style={{ margin: "0 0 8px", fontSize: 22, fontWeight: 700, cursor: "pointer", borderBottom: "2px solid transparent" }} title="Click to edit title">{value}</h2>
 }
 
 const iStyle = { width: "100%", padding: "9px 12px", border: "1px solid #E2E8F0", borderRadius: 8, fontSize: 14, outline: "none", boxSizing: "border-box", fontFamily: "inherit" }

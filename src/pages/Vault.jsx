@@ -296,6 +296,23 @@ export default function Vault({ user }) {
     }
   }
 
+  async function handleTitleChange(itemId, newTitle) {
+    try {
+      await updateDoc(doc(db, "vault", itemId), { title: newTitle, updatedAt: serverTimestamp() })
+      setAssets(prev => prev.map(a => a.id === itemId ? { ...a, title: newTitle } : a))
+      setViewAsset(prev => prev?.id === itemId ? { ...prev, title: newTitle } : prev)
+      setPanelAsset(prev => prev?.id === itemId ? { ...prev, title: newTitle } : prev)
+    } catch (e) { console.error("Title update error:", e) }
+  }
+
+  async function handleGroupChangeInModal(itemId, newGroupId, newSubGroupId) {
+    try {
+      await updateDoc(doc(db, "vault", itemId), { groupId: newGroupId || "", subGroupId: newSubGroupId || "", updatedAt: serverTimestamp() })
+      setAssets(prev => prev.map(a => a.id === itemId ? { ...a, groupId: newGroupId || "", subGroupId: newSubGroupId || "" } : a))
+      setViewAsset(prev => prev?.id === itemId ? { ...prev, groupId: newGroupId || "", subGroupId: newSubGroupId || "" } : prev)
+    } catch (e) { console.error("Group update error:", e) }
+  }
+
   function handleDrop(e) {
     e.preventDefault()
     setDragOver(false)
@@ -530,7 +547,8 @@ export default function Vault({ user }) {
                 items={filtered}
                 groups={groups}
                 onGroupChange={handleGroupChange}
-                onView={item => setPanelAsset(item)}
+                onView={item => setViewAsset(item)}
+                onPreview={item => setPanelAsset(item)}
                 onEdit={item => openEdit(item)}
                 onDelete={item => handleDelete(item)}
                 onPin={item => handlePin(item)}
@@ -692,33 +710,46 @@ export default function Vault({ user }) {
         </Modal>
       )}
 
-      {/* VIEW MODAL */}
+      {/* VIEW MODAL — single editing surface */}
       {viewAsset && (
-        <Modal onClose={() => setViewAsset(null)} title={displayTitle(viewAsset)} accent={ACCENT} wide>
+        <Modal onClose={() => setViewAsset(null)} title="" accent={ACCENT} wide>
           <div>
-            <div style={{ display: "flex", gap: 8, marginBottom: 16, flexWrap: "wrap", alignItems: "center" }}>
-              {groupMap[viewAsset.groupId] && (
-                <span style={{ background: groupMap[viewAsset.groupId].color + "22", color: groupMap[viewAsset.groupId].color, padding: "2px 10px", borderRadius: 12, fontSize: 12, fontWeight: 600 }}>
-                  {groupMap[viewAsset.groupId].icon} {groupMap[viewAsset.groupId].name}
-                </span>
-              )}
+            {/* Editable title */}
+            <EditableTitle value={displayTitle(viewAsset)} onSave={newTitle => handleTitleChange(viewAsset.id, newTitle)} />
+            {viewAsset.fileName && viewAsset.fileName !== (viewAsset.title || viewAsset.name) && (
+              <div style={{ fontSize: 12, color: MUTED, marginBottom: 12, opacity: 0.7 }}>File: {viewAsset.fileName}</div>
+            )}
+
+            {/* Group — editable dropdown */}
+            <div style={{ marginBottom: 12 }}>
+              <GroupSelect
+                value={viewAsset.groupId || ""}
+                onChange={v => handleGroupChangeInModal(viewAsset.id, v, "")}
+                subValue={viewAsset.subGroupId || ""}
+                onSubChange={v => handleGroupChangeInModal(viewAsset.id, viewAsset.groupId, v)}
+              />
+            </div>
+
+            {/* Metadata row */}
+            <div style={{ display: "flex", gap: 8, marginBottom: 12, flexWrap: "wrap", alignItems: "center" }}>
               {viewAsset.fileSize ? <span style={{ fontSize: 12, color: MUTED }}>{fmtSize(viewAsset.fileSize)}</span> : null}
               {viewAsset.pinned && <span style={{ fontSize: 12, color: "#F59E0B" }}>📌 Pinned</span>}
             </div>
+
+            {/* Tags — editable */}
             <div style={{ marginBottom: 12 }} onClick={e => e.stopPropagation()}>
               <TagInput tags={viewAsset.tags || []} onChange={tags => handleTagsChange(viewAsset.id, tags)} allTags={allTags} accentColor={ACCENT} />
             </div>
-            {viewAsset.fileName && viewAsset.fileName !== (viewAsset.title || viewAsset.name) && (
-              <div style={{ fontSize: 12, color: MUTED, marginBottom: 8, opacity: 0.7 }}>
-                File: {viewAsset.fileName}
-              </div>
-            )}
+
+            {/* Dates */}
             {(viewAsset.createdAt || viewAsset.updatedAt) && (
               <div style={{ fontSize: 12, color: MUTED, marginBottom: 12, display: "flex", gap: 16 }}>
                 {viewAsset.createdAt && <span>Created {fmtDate(viewAsset.createdAt)}</span>}
                 {viewAsset.updatedAt && <span>Updated {fmtDate(viewAsset.updatedAt)}</span>}
               </div>
             )}
+
+            {/* AI Summary */}
             {viewAsset.summary ? (
               <div style={{ background: ACCENT + "0A", border: `1px solid ${ACCENT}22`, borderRadius: 8, padding: "10px 14px", marginBottom: 16, fontSize: 13, color: MUTED, lineHeight: 1.5, fontStyle: "italic" }}>
                 {viewAsset.summary}
@@ -728,7 +759,11 @@ export default function Vault({ user }) {
                 ✨ Generate AI Summary
               </button>
             )}
+
+            {/* Notes — editable */}
             <InlineNotes value={viewAsset.description || ""} onSave={text => handleNotesChange(viewAsset.id, text)} accentColor={ACCENT} mutedColor={MUTED} />
+
+            {/* File preview + download */}
             <FilePreview fileUrl={viewAsset.fileUrl} fileType={viewAsset.fileType} fileName={viewAsset.fileName} />
             {viewAsset.fileUrl && (
               <a href={viewAsset.fileUrl} target="_blank" rel="noopener noreferrer"
@@ -736,9 +771,13 @@ export default function Vault({ user }) {
                 {fileIcon(viewAsset.fileType)} Download {viewAsset.fileName || "file"}
               </a>
             )}
+
+            {/* Messages */}
             <CollapsibleMessages collectionName="vault" docId={viewAsset.id} user={user} resourceTitle={displayTitle(viewAsset)} accentColor={ACCENT} />
+
+            {/* Action buttons */}
             <div style={{ display: "flex", gap: 10, marginTop: 20 }}>
-              <button onClick={() => openEdit(viewAsset)} style={{ background: ACCENT + "18", color: ACCENT, border: `1px solid ${ACCENT}44`, borderRadius: 8, padding: "8px 16px", cursor: "pointer", fontSize: 13, fontWeight: 600 }}>✏️ Edit</button>
+              <button onClick={() => openEdit(viewAsset)} style={{ background: ACCENT + "18", color: ACCENT, border: `1px solid ${ACCENT}44`, borderRadius: 8, padding: "8px 16px", cursor: "pointer", fontSize: 13, fontWeight: 600 }}>📎 Replace File</button>
               <button onClick={() => handlePin(viewAsset)} style={{ background: viewAsset.pinned ? "#FEF3C7" : "#F9FAFB", color: viewAsset.pinned ? "#D97706" : MUTED, border: `1px solid ${viewAsset.pinned ? "#FDE68A" : BORDER}`, borderRadius: 8, padding: "8px 16px", cursor: "pointer", fontSize: 13 }}>
                 {viewAsset.pinned ? "📌 Unpin" : "📌 Pin"}
               </button>
@@ -813,14 +852,28 @@ function Modal({ children, onClose, title, accent, wide }) {
   return (
     <div onClick={onClose} style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.4)", display: "flex", alignItems: "center", justifyContent: "center", zIndex: 1000, padding: 20 }}>
       <div onClick={e => e.stopPropagation()} style={{ background: "#fff", borderRadius: 16, padding: 32, width: "100%", maxWidth: wide ? 700 : 520, maxHeight: "90vh", overflowY: "auto" }}>
-        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 24 }}>
-          <h2 style={{ margin: 0, fontSize: 22, fontWeight: 700 }}>{title}</h2>
+        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: title ? 24 : 8 }}>
+          {title ? <h2 style={{ margin: 0, fontSize: 22, fontWeight: 700 }}>{title}</h2> : <div />}
           <button onClick={onClose} style={{ background: "none", border: "none", fontSize: 24, cursor: "pointer", color: "#94A3B8" }}>×</button>
         </div>
         {children}
       </div>
     </div>
   )
+}
+
+function EditableTitle({ value, onSave }) {
+  const [editing, setEditing] = useState(false)
+  const [text, setText] = useState(value)
+  useEffect(() => { setText(value) }, [value])
+  function handleBlur() {
+    setEditing(false)
+    if (text.trim() && text.trim() !== value) onSave(text.trim())
+  }
+  if (editing) {
+    return <input autoFocus value={text} onChange={e => setText(e.target.value)} onBlur={handleBlur} onKeyDown={e => { if (e.key === "Enter") e.target.blur(); if (e.key === "Escape") { setText(value); setEditing(false) } }} style={{ width: "100%", fontSize: 22, fontWeight: 700, border: "none", borderBottom: "2px solid #A89078", outline: "none", padding: "0 0 4px", marginBottom: 8, fontFamily: "inherit", boxSizing: "border-box" }} />
+  }
+  return <h2 onClick={() => setEditing(true)} style={{ margin: "0 0 8px", fontSize: 22, fontWeight: 700, cursor: "pointer", borderBottom: "2px solid transparent" }} title="Click to edit title">{value}</h2>
 }
 
 const iStyle = { width: "100%", padding: "9px 12px", border: "1px solid #EDE8E2", borderRadius: 8, fontSize: 14, outline: "none", boxSizing: "border-box", fontFamily: "inherit" }
