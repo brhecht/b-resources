@@ -657,10 +657,14 @@ export default function Library({ user }) {
                 {viewDoc.updatedAt && <span>Updated {fmtDate(viewDoc.updatedAt)}</span>}
               </div>
             )}
-            {viewDoc.summary && (
+            {viewDoc.summary ? (
               <div style={{ background: ACCENT + "0A", border: `1px solid ${ACCENT}22`, borderRadius: 8, padding: "10px 14px", marginBottom: 16, fontSize: 13, color: MUTED, lineHeight: 1.5, fontStyle: "italic" }}>
                 {viewDoc.summary}
               </div>
+            ) : (
+              <button onClick={() => generateSummary(viewDoc.id, viewDoc.title, viewDoc.description, viewDoc.fileName, viewDoc.fileType)} style={{ background: ACCENT + "12", color: ACCENT, border: `1px solid ${ACCENT}33`, borderRadius: 8, padding: "6px 12px", cursor: "pointer", fontSize: 12, marginBottom: 16 }}>
+                ✨ Generate AI Summary
+              </button>
             )}
             {viewDoc.description && <p style={{ color: MUTED, marginBottom: 20, fontSize: 14 }}>{viewDoc.description}</p>}
             <FilePreview fileUrl={viewDoc.fileUrl} fileType={viewDoc.fileType} fileName={viewDoc.fileName} />

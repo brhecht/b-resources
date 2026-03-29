@@ -56,12 +56,11 @@ export default function ResourceCard({ item, group, onView, onEdit, onDelete, on
       onMouseEnter={() => setHovered(true)}
       onMouseLeave={() => setHovered(false)}
       onClick={onView}
-      title={item.summary || ""}
       style={{
         background: "#fff",
         border: `1px solid ${hovered ? accentColor : borderColor}`,
         borderRadius: 12,
-        overflow: "hidden",
+        overflow: "visible",
         transition: "all 0.15s",
         transform: hovered ? "translateY(-2px)" : "none",
         boxShadow: hovered ? `0 4px 16px ${accentColor}1A` : "none",
@@ -69,6 +68,11 @@ export default function ResourceCard({ item, group, onView, onEdit, onDelete, on
         position: "relative",
       }}
     >
+      {hovered && item.summary && (
+        <div style={{ position: "absolute", bottom: "100%", left: 0, right: 0, marginBottom: 6, background: "#1A1A2E", color: "#fff", fontSize: 11, lineHeight: 1.4, padding: "8px 12px", borderRadius: 8, zIndex: 50, boxShadow: "0 4px 12px rgba(0,0,0,0.15)", pointerEvents: "none" }}>
+          {item.summary}
+        </div>
+      )}
       {hasUnread && (
         <div style={{
           position: "absolute", top: 8, right: 8, width: 10, height: 10,

@@ -45,6 +45,7 @@ export default function GroupKanban({
   const [dragOverSub, setDragOverSub] = useState(null)
   const [collapsedSubs, setCollapsedSubs] = useState({})
   const [menuOpen, setMenuOpen] = useState(null)
+  const [hoveredCard, setHoveredCard] = useState(null)
 
   const topGroups = groups.filter(g => !g.parentId).sort((a, b) => (a.order ?? 99) - (b.order ?? 99))
   const subGroupsByParent = {}
@@ -121,7 +122,6 @@ export default function GroupKanban({
         draggable="true"
         onDragStart={e => handleDragStart(e, item)}
         onClick={() => onView(item)}
-        title={item.summary || ""}
         style={{
           background: "#fff",
           border: `1px solid ${borderColor}`,
@@ -132,9 +132,14 @@ export default function GroupKanban({
           transition: "box-shadow 0.1s",
           position: "relative",
         }}
-        onMouseEnter={e => e.currentTarget.style.boxShadow = "0 2px 8px rgba(0,0,0,0.08)"}
-        onMouseLeave={e => e.currentTarget.style.boxShadow = "none"}
+        onMouseEnter={e => { e.currentTarget.style.boxShadow = "0 2px 8px rgba(0,0,0,0.08)"; if (item.summary) setHoveredCard(item.id) }}
+        onMouseLeave={e => { e.currentTarget.style.boxShadow = "none"; setHoveredCard(null) }}
       >
+        {hoveredCard === item.id && item.summary && (
+          <div style={{ position: "absolute", bottom: "100%", left: 0, right: 0, marginBottom: 6, background: "#1A1A2E", color: "#fff", fontSize: 11, lineHeight: 1.4, padding: "8px 10px", borderRadius: 8, zIndex: 50, boxShadow: "0 4px 12px rgba(0,0,0,0.15)", pointerEvents: "none" }}>
+            {item.summary}
+          </div>
+        )}
         {hasUnread && (
           <div style={{ position: "absolute", top: 6, right: 6, width: 8, height: 8, borderRadius: "50%", background: "#2563EB", boxShadow: "0 0 0 2px #fff", zIndex: 2 }} />
         )}

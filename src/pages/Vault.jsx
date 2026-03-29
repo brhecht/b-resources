@@ -662,10 +662,14 @@ export default function Vault({ user }) {
                 {viewAsset.updatedAt && <span>Updated {fmtDate(viewAsset.updatedAt)}</span>}
               </div>
             )}
-            {viewAsset.summary && (
+            {viewAsset.summary ? (
               <div style={{ background: ACCENT + "0A", border: `1px solid ${ACCENT}22`, borderRadius: 8, padding: "10px 14px", marginBottom: 16, fontSize: 13, color: MUTED, lineHeight: 1.5, fontStyle: "italic" }}>
                 {viewAsset.summary}
               </div>
+            ) : (
+              <button onClick={() => generateSummary(viewAsset.id, viewAsset.title || viewAsset.name, viewAsset.description, viewAsset.fileName, viewAsset.fileType)} style={{ background: ACCENT + "12", color: ACCENT, border: `1px solid ${ACCENT}33`, borderRadius: 8, padding: "6px 12px", cursor: "pointer", fontSize: 12, marginBottom: 16 }}>
+                ✨ Generate AI Summary
+              </button>
             )}
             {viewAsset.description && (
               <div style={{ marginBottom: 20 }}>
