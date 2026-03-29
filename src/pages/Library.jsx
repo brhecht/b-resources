@@ -13,7 +13,7 @@ import {
   where,
 } from "firebase/firestore"
 import { ref, uploadBytesResumable, getDownloadURL, deleteObject } from "firebase/storage"
-import { CollapsibleComments } from "../components/CommentSection"
+import { CollapsibleMessages } from "../components/MessageThread"
 import TagInput from "../components/TagInput"
 import TagFilter from "../components/TagFilter"
 import ViewSwitcher from "../components/ViewSwitcher"
@@ -512,6 +512,7 @@ export default function Library({ user }) {
             accentColor={ACCENT}
             borderColor={BORDER}
             mutedColor={MUTED}
+            userEmail={user?.email}
           />
         ) : view === "list" ? (
           <ListView
@@ -524,6 +525,7 @@ export default function Library({ user }) {
             accentColor={ACCENT}
             borderColor={BORDER}
             mutedColor={MUTED}
+            userEmail={user?.email}
           />
         ) : (
           <div>
@@ -535,7 +537,7 @@ export default function Library({ user }) {
                 </div>
                 <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(280px, 1fr))", gap: 18, marginBottom: 24 }}>
                   {filtered.filter(d => d.pinned).map(d => (
-                    <ResourceCard key={d.id} item={d} group={groupMap[d.groupId]} onView={() => setViewDoc(d)} onEdit={() => openEdit(d)} onDelete={() => handleDelete(d.id)} onPin={() => handlePin(d)} accentColor={ACCENT} borderColor={BORDER} mutedColor={MUTED} />
+                    <ResourceCard key={d.id} item={d} group={groupMap[d.groupId]} onView={() => setViewDoc(d)} onEdit={() => openEdit(d)} onDelete={() => handleDelete(d.id)} onPin={() => handlePin(d)} accentColor={ACCENT} borderColor={BORDER} mutedColor={MUTED} userEmail={user?.email} />
                   ))}
                 </div>
               </>
@@ -550,7 +552,7 @@ export default function Library({ user }) {
                 )}
                 <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(280px, 1fr))", gap: 18 }}>
                   {filtered.filter(d => !d.pinned).map(d => (
-                    <ResourceCard key={d.id} item={d} group={groupMap[d.groupId]} onView={() => setViewDoc(d)} onEdit={() => openEdit(d)} onDelete={() => handleDelete(d.id)} onPin={() => handlePin(d)} accentColor={ACCENT} borderColor={BORDER} mutedColor={MUTED} />
+                    <ResourceCard key={d.id} item={d} group={groupMap[d.groupId]} onView={() => setViewDoc(d)} onEdit={() => openEdit(d)} onDelete={() => handleDelete(d.id)} onPin={() => handlePin(d)} accentColor={ACCENT} borderColor={BORDER} mutedColor={MUTED} userEmail={user?.email} />
                   ))}
                 </div>
               </>
@@ -673,7 +675,7 @@ export default function Library({ user }) {
               </div>
             )}
             {!viewDoc.content && !viewDoc.fileUrl && <p style={{ color: MUTED, fontStyle: "italic" }}>No content.</p>}
-            <CollapsibleComments collectionName="library" docId={viewDoc.id} user={user} resourceTitle={viewDoc.title} accentColor={ACCENT} />
+            <CollapsibleMessages collectionName="library" docId={viewDoc.id} user={user} resourceTitle={viewDoc.title} accentColor={ACCENT} />
             <div style={{ display: "flex", gap: 10, marginTop: 20 }}>
               <button onClick={() => openEdit(viewDoc)} style={{ background: ACCENT + "18", color: ACCENT, border: `1px solid ${ACCENT}44`, borderRadius: 8, padding: "8px 16px", cursor: "pointer", fontSize: 13, fontWeight: 600 }}>✏️ Edit</button>
               <button onClick={() => handlePin(viewDoc)} style={{ background: viewDoc.pinned ? "#FEF3C7" : "#F9FAFB", color: viewDoc.pinned ? "#D97706" : MUTED, border: `1px solid ${viewDoc.pinned ? "#FDE68A" : BORDER}`, borderRadius: 8, padding: "8px 16px", cursor: "pointer", fontSize: 13 }}>

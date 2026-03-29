@@ -19,7 +19,7 @@ function fmtDate(ts) {
   return d.toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" })
 }
 
-export default function ListView({ items, groups, onView, onEdit, onDelete, onPin, accentColor = "#7B8FA8", borderColor = "#E2E8F0", mutedColor = "#6B7A99" }) {
+export default function ListView({ items, groups, onView, onEdit, onDelete, onPin, accentColor = "#7B8FA8", borderColor = "#E2E8F0", mutedColor = "#6B7A99", userEmail }) {
   const [sortKey, setSortKey] = useState("createdAt")
   const [sortDir, setSortDir] = useState("desc")
 
@@ -107,6 +107,7 @@ export default function ListView({ items, groups, onView, onEdit, onDelete, onPi
               onMouseLeave={e => e.currentTarget.style.background = "transparent"}
             >
               <div style={{ flex: 3, display: "flex", alignItems: "center", gap: 8, minWidth: 0 }}>
+                {(() => { const meta = item._msgMeta; const ek = userEmail ? userEmail.replace(/\./g, "_") : ""; return meta?.lastAt && ek && !meta.readBy?.[ek] ? <span style={{ width: 8, height: 8, borderRadius: "50%", background: "#2563EB", flexShrink: 0 }} /> : null })()}
                 <span style={{ fontSize: 16, flexShrink: 0 }}>{fileIcon(item.fileType)}</span>
                 <span style={{ fontSize: 14, fontWeight: 600, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{title}</span>
                 {item.pinned && <span style={{ fontSize: 12 }}>★</span>}

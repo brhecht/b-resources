@@ -29,6 +29,7 @@ export default function GroupKanban({
   accentColor = "#7B8FA8",
   borderColor = "#E2E8F0",
   mutedColor = "#6B7A99",
+  userEmail,
 }) {
   const [dragOverCol, setDragOverCol] = useState(null)
   const [dragOverSub, setDragOverSub] = useState(null)
@@ -110,6 +111,7 @@ export default function GroupKanban({
       >
         <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", marginBottom: 4 }}>
           <div style={{ display: "flex", alignItems: "center", gap: 6, flex: 1, minWidth: 0 }}>
+            {(() => { const meta = item._msgMeta; const ek = userEmail ? userEmail.replace(/\./g, "_") : ""; return meta?.lastAt && ek && !meta.readBy?.[ek] ? <span style={{ width: 8, height: 8, borderRadius: "50%", background: "#2563EB", flexShrink: 0 }} /> : null })()}
             <span style={{ fontSize: 14, flexShrink: 0 }}>{fileIcon(item.fileType)}</span>
             <span style={{ fontSize: 13, fontWeight: 600, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{title}</span>
           </div>

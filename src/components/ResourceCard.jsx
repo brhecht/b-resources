@@ -29,13 +29,18 @@ function fileIcon(type) {
   return "📄"
 }
 
-export default function ResourceCard({ item, group, onView, onEdit, onDelete, onPin, accentColor = "#7B8FA8", borderColor = "#E2E8F0", mutedColor = "#6B7A99" }) {
+export default function ResourceCard({ item, group, onView, onEdit, onDelete, onPin, accentColor = "#7B8FA8", borderColor = "#E2E8F0", mutedColor = "#6B7A99", userEmail }) {
   const [hovered, setHovered] = useState(false)
 
   const title = item.title || item.name || "Untitled"
   const description = item.description || ""
   const tags = item.tags || []
   const isImage = item.fileType?.startsWith("image/")
+
+  // Unread message indicator
+  const meta = item._msgMeta
+  const emailKey = userEmail ? userEmail.replace(/\./g, "_") : ""
+  const hasUnread = meta?.lastAt && emailKey && !meta.readBy?.[emailKey]
 
   return (
     <div
@@ -55,6 +60,13 @@ export default function ResourceCard({ item, group, onView, onEdit, onDelete, on
         position: "relative",
       }}
     >
+      {hasUnread && (
+        <div style={{
+          position: "absolute", top: 8, right: 8, width: 10, height: 10,
+          borderRadius: "50%", background: "#2563EB", zIndex: 2,
+          boxShadow: "0 0 0 2px #fff",
+        }} />
+      )}
       {isImage && item.fileUrl && (
         <div style={{ height: 120, overflow: "hidden", background: "#F8FAFC", borderBottom: `1px solid ${borderColor}` }}>
           <img src={item.fileUrl} alt={title} style={{ width: "100%", height: "100%", objectFit: "cover" }} />
