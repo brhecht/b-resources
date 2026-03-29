@@ -284,6 +284,7 @@ export default function Library({ user }) {
       if (summary) {
         await updateDoc(doc(db, "library", docId), { summary })
         setDocs(prev => prev.map(d => d.id === docId ? { ...d, summary } : d))
+        setViewDoc(prev => prev?.id === docId ? { ...prev, summary } : prev)
       }
     } catch (e) { console.error("Summary generation failed:", e) }
   }

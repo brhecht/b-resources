@@ -289,6 +289,7 @@ export default function Vault({ user }) {
       if (summary) {
         await updateDoc(doc(db, "vault", docId), { summary })
         setAssets(prev => prev.map(a => a.id === docId ? { ...a, summary } : a))
+        setViewAsset(prev => prev?.id === docId ? { ...prev, summary } : prev)
       }
     } catch (e) { console.error("Summary generation failed:", e) }
   }
