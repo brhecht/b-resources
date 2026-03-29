@@ -15,6 +15,7 @@ import {
 import { ref, uploadBytesResumable, getDownloadURL, deleteObject } from "firebase/storage"
 import { CollapsibleMessages } from "../components/MessageThread"
 import TagInput from "../components/TagInput"
+import InlineNotes from "../components/InlineNotes"
 import TagFilter from "../components/TagFilter"
 import ViewSwitcher from "../components/ViewSwitcher"
 import GroupKanban from "../components/GroupKanban"
@@ -277,6 +278,16 @@ export default function Vault({ user }) {
       setViewAsset(prev => prev?.id === itemId ? { ...prev, tags: newTags } : prev)
     } catch (e) {
       console.error("Tag update error:", e)
+    }
+  }
+
+  async function handleNotesChange(itemId, newDescription) {
+    try {
+      await updateDoc(doc(db, "vault", itemId), { description: newDescription, updatedAt: serverTimestamp() })
+      setAssets(prev => prev.map(a => a.id === itemId ? { ...a, description: newDescription } : a))
+      setViewAsset(prev => prev?.id === itemId ? { ...prev, description: newDescription } : prev)
+    } catch (e) {
+      console.error("Notes update error:", e)
     }
   }
 
@@ -686,11 +697,7 @@ export default function Vault({ user }) {
                 ✨ Generate AI Summary
               </button>
             )}
-            {viewAsset.description && (
-              <div style={{ marginBottom: 20 }}>
-                <MarkdownRenderer content={viewAsset.description} accentColor={ACCENT} />
-              </div>
-            )}
+            <InlineNotes value={viewAsset.description || ""} onSave={text => handleNotesChange(viewAsset.id, text)} accentColor={ACCENT} mutedColor={MUTED} />
             <FilePreview fileUrl={viewAsset.fileUrl} fileType={viewAsset.fileType} fileName={viewAsset.fileName} />
             {viewAsset.fileUrl && (
               <a href={viewAsset.fileUrl} target="_blank" rel="noopener noreferrer"

@@ -15,6 +15,7 @@ import {
 import { ref, uploadBytesResumable, getDownloadURL, deleteObject } from "firebase/storage"
 import { CollapsibleMessages } from "../components/MessageThread"
 import TagInput from "../components/TagInput"
+import InlineNotes from "../components/InlineNotes"
 import TagFilter from "../components/TagFilter"
 import ViewSwitcher from "../components/ViewSwitcher"
 import GroupKanban from "../components/GroupKanban"
@@ -272,6 +273,16 @@ export default function Library({ user }) {
       setViewDoc(prev => prev?.id === itemId ? { ...prev, tags: newTags } : prev)
     } catch (e) {
       console.error("Tag update error:", e)
+    }
+  }
+
+  async function handleNotesChange(itemId, newDescription) {
+    try {
+      await updateDoc(doc(db, "library", itemId), { description: newDescription, updatedAt: serverTimestamp() })
+      setDocs(prev => prev.map(d => d.id === itemId ? { ...d, description: newDescription } : d))
+      setViewDoc(prev => prev?.id === itemId ? { ...prev, description: newDescription } : prev)
+    } catch (e) {
+      console.error("Notes update error:", e)
     }
   }
 
@@ -681,7 +692,7 @@ export default function Library({ user }) {
                 ✨ Generate AI Summary
               </button>
             )}
-            {viewDoc.description && <p style={{ color: MUTED, marginBottom: 20, fontSize: 14 }}>{viewDoc.description}</p>}
+            <InlineNotes value={viewDoc.description || ""} onSave={text => handleNotesChange(viewDoc.id, text)} accentColor={ACCENT} mutedColor={MUTED} />
             <FilePreview fileUrl={viewDoc.fileUrl} fileType={viewDoc.fileType} fileName={viewDoc.fileName} />
             {viewDoc.fileUrl && (
               <a href={viewDoc.fileUrl} target="_blank" rel="noopener noreferrer"
