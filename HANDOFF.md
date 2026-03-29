@@ -7,7 +7,7 @@ B Resources is the knowledge and asset hub for Humble Conviction. It has three m
 
 ## Tech Stack
 - **Frontend:** React 19 + Vite 6 + Tailwind CSS 4 + React Router 7
-- **Database:** Firebase Firestore (project `b-things` — shared with Things, Content Calendar, B Nico, Eddy, B People)
+- **Database:** Firebase Firestore (project `b-things` — shared with Things, Content Calendar, B Nico)
 - **Auth:** Firebase Auth (Google OAuth)
 - **Storage:** Firebase Storage (gs://b-things.firebasestorage.app)
 - **Hosting:** Vercel (frontend) + Firebase (rules/storage)
@@ -42,20 +42,8 @@ App is deployed and functional. Library and Vault pages work with full CRUD. Gro
 3. **Slack bot pipeline** — Full setup: app creation, OAuth scopes, installation, env vars in Vercel, Event Subscriptions with verified URL, message.channels subscription, bot invited to #b-resources
 4. **Firebase rules CRITICAL FIX** — Previous deploy had overwritten ALL b-things rules with only vault/library/groups. Built comprehensive merged ruleset covering ALL 6 apps and redeployed successfully.
 
-## Firebase Rules (CRITICAL)
-The `firestore.rules` file in this repo is now the **MASTER ruleset** for the entire `b-things` Firebase project. It covers:
-- **B Things** — appConfig, users/tasks (+messages), users/projects, viewers
-- **Brain Inbox** — nicoTasks, nicoProjects, inboxMessages, nicoNotes
-- **B Resources** — vault, library, groups (all with `{document=**}` for comments sub-collections)
-- **Content Calendar** — contentCards (+messages), contentPlatforms
-- **Eddy** — restricted to Brian (`brhnyc1970@gmail.com`) and Nico (`nico@humbleconviction.com`)
-- **B People** — contacts (+notes), feed_items, user_settings, mail
-- **Catch-all deny** — blocks everything not explicitly allowed
-
-⚠️ **NEVER deploy firestore rules from any other app folder** — always deploy from b-resources to avoid overwriting the master ruleset. Command:
-```bash
-firebase deploy --only firestore:rules --project b-things
-```
+## Firebase Rules — WARNING
+⚠️ **DO NOT deploy Firestore rules from this repo.** The `firestore.rules` file in this repo was created in error and contains incorrect rules (includes Eddy and B People collections that don't belong in the `b-things` project). The `firestore` section needs to be removed from `firebase.json` (keep only `storage`). The canonical Firestore rules deployer is currently brain-inbox; this will migrate to a dedicated infra repo. See the master handoff in bhub for the full Firestore deploy protocol.
 
 ## Vercel Environment Variables
 ### Frontend (VITE_*)
