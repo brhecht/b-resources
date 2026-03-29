@@ -5,6 +5,7 @@ import SignIn from "./components/SignIn"
 import Home from "./pages/Home"
 import Library from "./pages/Library"
 import Vault from "./pages/Vault"
+import Inbox from "./pages/Inbox"
 
 export default function App() {
   const [user, setUser] = useState(null)
@@ -40,6 +41,7 @@ export default function App() {
     <BrowserRouter>
       <Routes>
         <Route path="/" element={<Home />} />
+        <Route path="/inbox" element={<Inbox user={user} />} />
         <Route path="/library" element={<Library user={user} />} />
         <Route path="/vault" element={<Vault user={user} />} />
       </Routes>
