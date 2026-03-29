@@ -80,6 +80,15 @@ function timeAgo(ts) {
   return fmtDate(ts)
 }
 
+function displayTitle(item) {
+  if (item.title) return item.title
+  const name = item.name || "Untitled"
+  if (/\.[a-z0-9]{1,5}$/i.test(name)) {
+    return name.replace(/\.[a-z0-9]{1,5}$/i, "").replace(/[-_]/g, " ").replace(/\b\w/g, c => c.toUpperCase())
+  }
+  return name
+}
+
 function FilePreview({ fileUrl, fileType, fileName }) {
   if (!fileUrl) return null
   if (fileType?.startsWith("image/")) {
@@ -562,6 +571,7 @@ export default function Library({ user }) {
                 groupMap={groupMap}
                 collectionName="library"
                 user={user}
+                displayTitle={displayTitle}
                 accentColor={ACCENT}
                 borderColor={BORDER}
                 mutedColor={MUTED}
