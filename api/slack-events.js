@@ -234,75 +234,86 @@ export default async function handler(req, res) {
       return res.status(200).json({ ok: true });
     }
 
-    const text = event.text || "";
-    const urls = extractUrls(text);
-    const hasFiles = !!(event.files && event.files.length > 0);
-    const hasUrls = urls.length > 0;
+    // Respond to Slack immediately (3-second timeout)
+    // Processing continues below after response is sent
+    res.status(200).json({ ok: true });
 
-    const classification = classify(text, hasFiles, hasUrls, urls);
-    const title = extractTitle(text, urls);
-    const tags = extractTags(text);
-    const contentType = hasUrls ? detectContentType(urls) : (hasFiles ? "file" : "text");
+    // --- Process in background after Slack ack ---
+    try {
+      const text = event.text || "";
+      const urls = extractUrls(text);
+      const hasFiles = !!(event.files && event.files.length > 0);
+      const hasUrls = urls.length > 0;
 
-    // Build the Firestore document
-    const doc = {
-      title,
-      description: text,
-      groupId: classification.groupId,
-      tags,
-      contentType,
-      source: "slack",
-      slackMessageTs: event.ts,
-      slackChannelId: event.channel,
-      createdAt: FieldValue.serverTimestamp(),
-    };
+      const classification = classify(text, hasFiles, hasUrls, urls);
+      const title = extractTitle(text, urls);
+      const tags = extractTags(text);
+      const contentType = hasUrls ? detectContentType(urls) : (hasFiles ? "file" : "text");
 
-    // Add URLs if present
-    if (urls.length > 0) {
-      doc.url = urls[0];
-      if (urls.length > 1) doc.urls = urls;
-    }
+      // Build the Firestore document
+      const doc = {
+        title,
+        description: text,
+        groupId: classification.groupId,
+        tags,
+        contentType,
+        source: "slack",
+        slackMessageTs: event.ts,
+        slackChannelId: event.channel,
+        createdAt: FieldValue.serverTimestamp(),
+      };
 
-    // Upload file to Firebase Storage if present
-    if (hasFiles) {
-      const uploaded = await uploadSlackFile(event.files[0], classification.collection);
-      if (uploaded) {
-        doc.fileUrl = uploaded.fileUrl;
-        doc.fileName = uploaded.fileName;
-        doc.fileSize = uploaded.fileSize;
-        doc.fileType = uploaded.fileType;
-        doc.storagePath = uploaded.storagePath;
-      } else {
-        // Fallback: store metadata only if upload fails
+      // Add URLs if present
+      if (urls.length > 0) {
+        doc.url = urls[0];
+        if (urls.length > 1) doc.urls = urls;
+      }
+
+      // Store file metadata first (so doc is saved even if upload fails)
+      if (hasFiles) {
         doc.fileName = event.files[0].name;
         doc.fileType = event.files[0].mimetype;
+        doc.fileSize = event.files[0].size || 0;
       }
-    }
 
-    try {
-      await db.collection(classification.collection).add(doc);
+      // Save to Firestore first (fast)
+      const docRef = await db.collection(classification.collection).add(doc);
 
-      // Reply in thread with section-specific emoji and link
+      // Upload file to Firebase Storage (slow — runs after Firestore save)
+      if (hasFiles) {
+        const uploaded = await uploadSlackFile(event.files[0], classification.collection);
+        if (uploaded) {
+          await docRef.update({
+            fileUrl: uploaded.fileUrl,
+            fileName: uploaded.fileName,
+            fileSize: uploaded.fileSize,
+            fileType: uploaded.fileType,
+            storagePath: uploaded.storagePath,
+          });
+        }
+      }
+
+      // Reply in Slack thread
       const SECTION_EMOJI = { library: "📚", vault: "🔒", references: "🌐" };
       const emoji = SECTION_EMOJI[classification.collection] || "📄";
       const section = classification.collection;
       const siteUrl = "b-resources.vercel.app";
       const needsGroup = !classification.groupId;
+      const fileNote = hasFiles ? " 📎" : "";
 
-      const fileNote = doc.fileUrl ? " (file uploaded)" : doc.fileName ? " (file metadata only)" : "";
       const replyText = needsGroup
         ? `${emoji} Added to ${classification.label}${fileNote} (ungrouped) → ${siteUrl}/${section}`
         : `${emoji} Added to ${classification.label}${fileNote} → ${siteUrl}/${section}`;
 
       await postSlackMessage(event.channel, replyText, event.ts);
     } catch (err) {
-      console.error("Error saving resource:", err);
-      await postSlackMessage(
-        event.channel,
-        "⚠️ Failed to save resource. Check the logs.",
-        event.ts
-      );
+      console.error("Error processing resource:", err);
+      try {
+        await postSlackMessage(event.channel, "⚠️ Failed to save resource.", event.ts);
+      } catch (_) {}
     }
+
+    return; // already sent 200 above
   }
 
   return res.status(200).json({ ok: true });
