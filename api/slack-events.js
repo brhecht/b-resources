@@ -224,12 +224,12 @@ export default async function handler(req, res) {
   if (body.type === "event_callback") {
     const event = body.event;
 
-    // Only process channel messages (not bot messages, not edits)
-    // Allow file_share subtype so file uploads are processed
+    // Only process messages — skip bot messages and edits
     if (
       event.type !== "message" ||
-      (event.subtype && event.subtype !== "file_share") ||
-      event.bot_id
+      event.bot_id ||
+      event.subtype === "message_changed" ||
+      event.subtype === "message_deleted"
     ) {
       return res.status(200).json({ ok: true });
     }
