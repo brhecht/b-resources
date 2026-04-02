@@ -1,5 +1,5 @@
 import crypto from "crypto";
-import { db } from "./firebase-admin.js";
+import { db, bucket } from "./firebase-admin.js";
 import { FieldValue } from "firebase-admin/firestore";
 
 const SLACK_SIGNING_SECRET = process.env.SLACK_SIGNING_SECRET;
@@ -149,6 +149,43 @@ function extractTitle(text, urls) {
   return "Untitled resource";
 }
 
+async function uploadSlackFile(slackFile, collection) {
+  const downloadUrl = slackFile.url_private_download || slackFile.url_private;
+  if (!downloadUrl) return null;
+
+  try {
+    // Download from Slack (requires bot token auth)
+    const response = await fetch(downloadUrl, {
+      headers: { Authorization: `Bearer ${SLACK_BOT_TOKEN}` },
+    });
+    if (!response.ok) {
+      console.error("Slack file download failed:", response.status);
+      return null;
+    }
+    const buffer = Buffer.from(await response.arrayBuffer());
+
+    // Upload to Firebase Storage
+    const storagePath = `${collection}/slack-bot/${Date.now()}_${slackFile.name}`;
+    const file = bucket.file(storagePath);
+    await file.save(buffer, {
+      metadata: { contentType: slackFile.mimetype },
+    });
+    await file.makePublic();
+    const fileUrl = `https://storage.googleapis.com/${bucket.name}/${storagePath}`;
+
+    return {
+      fileUrl,
+      fileName: slackFile.name,
+      fileSize: slackFile.size || buffer.length,
+      fileType: slackFile.mimetype,
+      storagePath,
+    };
+  } catch (err) {
+    console.error("File upload failed:", err);
+    return null;
+  }
+}
+
 async function postSlackMessage(channel, text, threadTs) {
   await fetch("https://slack.com/api/chat.postMessage", {
     method: "POST",
@@ -225,10 +262,20 @@ export default async function handler(req, res) {
       if (urls.length > 1) doc.urls = urls;
     }
 
-    // Add file info if present
+    // Upload file to Firebase Storage if present
     if (hasFiles) {
-      doc.fileName = event.files[0].name;
-      doc.fileType = event.files[0].mimetype;
+      const uploaded = await uploadSlackFile(event.files[0], classification.collection);
+      if (uploaded) {
+        doc.fileUrl = uploaded.fileUrl;
+        doc.fileName = uploaded.fileName;
+        doc.fileSize = uploaded.fileSize;
+        doc.fileType = uploaded.fileType;
+        doc.storagePath = uploaded.storagePath;
+      } else {
+        // Fallback: store metadata only if upload fails
+        doc.fileName = event.files[0].name;
+        doc.fileType = event.files[0].mimetype;
+      }
     }
 
     try {
@@ -241,9 +288,10 @@ export default async function handler(req, res) {
       const siteUrl = "b-resources.vercel.app";
       const needsGroup = !classification.groupId;
 
+      const fileNote = doc.fileUrl ? " (file uploaded)" : doc.fileName ? " (file metadata only)" : "";
       const replyText = needsGroup
-        ? `${emoji} Added to ${classification.label} (ungrouped) → ${siteUrl}/${section}`
-        : `${emoji} Added to ${classification.label} → ${siteUrl}/${section}`;
+        ? `${emoji} Added to ${classification.label}${fileNote} (ungrouped) → ${siteUrl}/${section}`
+        : `${emoji} Added to ${classification.label}${fileNote} → ${siteUrl}/${section}`;
 
       await postSlackMessage(event.channel, replyText, event.ts);
     } catch (err) {
