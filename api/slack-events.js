@@ -225,9 +225,10 @@ export default async function handler(req, res) {
     const event = body.event;
 
     // Only process channel messages (not bot messages, not edits)
+    // Allow file_share subtype so file uploads are processed
     if (
       event.type !== "message" ||
-      event.subtype ||
+      (event.subtype && event.subtype !== "file_share") ||
       event.bot_id
     ) {
       return res.status(200).json({ ok: true });
