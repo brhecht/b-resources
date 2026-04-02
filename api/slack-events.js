@@ -126,15 +126,15 @@ function classify(text, hasFiles, hasUrls, urls) {
     if (contentType === "github") {
       return { groupId: "references", collection: "references", label: "References > Tools" };
     }
-    // Other URLs go to inbox for manual triage
-    return { groupId: "inbox", collection: "inbox", label: "Inbox" };
+    // Other URLs → references (ungrouped, user assigns group in kanban)
+    return { groupId: "", collection: "references", label: "References" };
   }
 
-  // Files without prefix → vault
-  if (hasFiles) return { groupId: "vault", collection: "vault", label: "Vault" };
+  // Files without prefix → vault (ungrouped)
+  if (hasFiles) return { groupId: "", collection: "vault", label: "Vault" };
 
-  // Fallback to inbox
-  return { groupId: "inbox", collection: "inbox", label: "Inbox" };
+  // Plain text without URLs or files → library (ungrouped)
+  return { groupId: "", collection: "library", label: "Library" };
 }
 
 function extractTitle(text, urls) {
@@ -235,15 +235,15 @@ export default async function handler(req, res) {
       await db.collection(classification.collection).add(doc);
 
       // Reply in thread with section-specific emoji and link
-      const SECTION_EMOJI = { library: "📚", vault: "🔒", references: "🌐", inbox: "📥" };
-      const emoji = SECTION_EMOJI[classification.collection] || "📥";
+      const SECTION_EMOJI = { library: "📚", vault: "🔒", references: "🌐" };
+      const emoji = SECTION_EMOJI[classification.collection] || "📄";
       const section = classification.collection;
       const siteUrl = "b-resources.vercel.app";
+      const needsGroup = !classification.groupId;
 
-      const replyText =
-        classification.groupId === "inbox"
-          ? `📥 Added to Inbox — triage it at ${siteUrl}/inbox`
-          : `${emoji} Added to ${classification.label} → ${siteUrl}/${section}`;
+      const replyText = needsGroup
+        ? `${emoji} Added to ${classification.label} (ungrouped) → ${siteUrl}/${section}`
+        : `${emoji} Added to ${classification.label} → ${siteUrl}/${section}`;
 
       await postSlackMessage(event.channel, replyText, event.ts);
     } catch (err) {
