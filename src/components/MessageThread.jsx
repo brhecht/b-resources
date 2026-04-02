@@ -86,7 +86,7 @@ export default function MessageThread({ collectionName, docId, user, resourceTit
       for (const handle of mentions) {
         const mentioned = getUserByHandle(handle)
         if (mentioned && mentioned.email !== user.email) {
-          const section = collectionName === "library" ? "library" : "vault"
+          const section = collectionName
           const resourceUrl = `https://b-resources.vercel.app/${section}#${docId}`
           const preview = text.length > 200 ? text.slice(0, 200) + "\u2026" : text
           const payload = `\u{1F4AC} ${msg.authorName} in B Resources: "${resourceTitle}"\n${preview}\n\u2192 ${resourceUrl}`

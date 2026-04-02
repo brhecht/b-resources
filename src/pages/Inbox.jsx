@@ -108,7 +108,7 @@ export default function Inbox({ user }) {
               Inbox
             </h1>
             <p style={{ fontSize: 13, color: MUTED, margin: "2px 0 0" }}>
-              Captured links land here. Triage to Library or Vault when ready.
+              Captured links land here. Triage to Library, Vault, or References when ready.
             </p>
           </div>
           <div style={{ flex: 1 }} />
@@ -217,6 +217,15 @@ export default function Inbox({ user }) {
                         }}
                       >
                         🔒 → Vault
+                      </button>
+                      <button
+                        onClick={(e) => { e.stopPropagation(); handleMove(item, "references") }}
+                        style={{
+                          background: "#5B9E8F" + "18", color: "#5B9E8F", border: `1px solid ${"#5B9E8F"}44`,
+                          borderRadius: 8, padding: "8px 14px", fontSize: 13, fontWeight: 600, cursor: "pointer",
+                        }}
+                      >
+                        🌐 → References
                       </button>
                       <div style={{ flex: 1 }} />
                       <button

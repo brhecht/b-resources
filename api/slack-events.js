@@ -61,35 +61,85 @@ function extractTags(text) {
     .slice(0, 10);
 }
 
-function classify(text, hasFiles, hasUrls) {
+function detectContentType(urls) {
+  if (!urls || urls.length === 0) return null;
+  const url = urls[0].toLowerCase();
+  if (url.includes("youtube.com") || url.includes("youtu.be")) return "youtube";
+  if (url.includes("linkedin.com")) return "linkedin";
+  if (url.includes("twitter.com") || url.includes("x.com")) return "twitter";
+  if (url.includes("github.com")) return "github";
+  if (url.includes("medium.com") || url.includes("substack.com")) return "blog";
+  if (url.includes("spotify.com") || url.includes("podcasts.apple.com")) return "podcast";
+  return "webpage";
+}
+
+function classify(text, hasFiles, hasUrls, urls) {
   const lower = text.toLowerCase();
 
-  // Explicit prefix routing
+  // Explicit prefix routing (ref: as shorthand)
   if (lower.startsWith("vault:")) return { groupId: "vault", collection: "vault", label: "Vault" };
-  if (lower.startsWith("library:")) return { groupId: "library", collection: "library", label: "Library" };
+  if (lower.startsWith("library:") || lower.startsWith("lib:")) return { groupId: "library", collection: "library", label: "Library" };
+  if (lower.startsWith("reference:") || lower.startsWith("references:") || lower.startsWith("ref:")) return { groupId: "references", collection: "references", label: "References" };
 
-  // Keyword-based classification
+  // Keyword-based classification — Library (internal)
   if (lower.includes("framework") || lower.includes("playbook")) {
     return { groupId: "library", collection: "library", label: "Library > Frameworks" };
   }
   if (lower.includes("sop") || lower.includes("process") || lower.includes("checklist")) {
     return { groupId: "library", collection: "library", label: "Library > SOPs" };
   }
+
+  // Keyword-based classification — Vault (assets)
   if (lower.includes("template") || lower.includes("brand") || lower.includes("logo") || lower.includes("asset")) {
     return { groupId: "vault", collection: "vault", label: "Vault > Brand Assets" };
   }
 
-  // Default by content type
+  // Keyword-based classification — References (external content)
+  if (lower.includes("article") || lower.includes("blog") || lower.includes("post")) {
+    return { groupId: "references", collection: "references", label: "References > Articles" };
+  }
+  if (lower.includes("video") || lower.includes("watch") || lower.includes("tutorial")) {
+    return { groupId: "references", collection: "references", label: "References > Videos" };
+  }
+  if (lower.includes("research") || lower.includes("study") || lower.includes("report") || lower.includes("whitepaper")) {
+    return { groupId: "references", collection: "references", label: "References > Research" };
+  }
+  if (lower.includes("guide") || lower.includes("how-to") || lower.includes("howto")) {
+    return { groupId: "references", collection: "references", label: "References > Guides" };
+  }
+  if (lower.includes("tool") || lower.includes("app") || lower.includes("software") || lower.includes("platform")) {
+    return { groupId: "references", collection: "references", label: "References > Tools" };
+  }
+  if (lower.includes("podcast") || lower.includes("episode")) {
+    return { groupId: "references", collection: "references", label: "References > Videos" };
+  }
+
+  // URL-based classification — known external content domains → references
+  if (hasUrls) {
+    const contentType = detectContentType(urls);
+    if (contentType === "youtube" || contentType === "podcast") {
+      return { groupId: "references", collection: "references", label: "References > Videos" };
+    }
+    if (contentType === "blog") {
+      return { groupId: "references", collection: "references", label: "References > Articles" };
+    }
+    if (contentType === "github") {
+      return { groupId: "references", collection: "references", label: "References > Tools" };
+    }
+    // Other URLs go to inbox for manual triage
+    return { groupId: "inbox", collection: "inbox", label: "Inbox" };
+  }
+
+  // Files without prefix → vault
   if (hasFiles) return { groupId: "vault", collection: "vault", label: "Vault" };
-  if (hasUrls) return { groupId: "library", collection: "library", label: "Library" };
 
   // Fallback to inbox
-  return { groupId: "inbox", collection: "library", label: "Inbox" };
+  return { groupId: "inbox", collection: "inbox", label: "Inbox" };
 }
 
 function extractTitle(text, urls) {
-  // Strip prefix commands
-  let cleaned = text.replace(/^(vault|library):\s*/i, "").trim();
+  // Strip prefix commands (including shorthands)
+  let cleaned = text.replace(/^(vault|library|lib|references?|ref):\s*/i, "").trim();
   // Strip Slack URL formatting for display
   cleaned = cleaned.replace(/<https?:\/\/[^>]+>/g, "").trim();
   // Use first line, truncated
@@ -151,9 +201,10 @@ export default async function handler(req, res) {
     const hasFiles = !!(event.files && event.files.length > 0);
     const hasUrls = urls.length > 0;
 
-    const classification = classify(text, hasFiles, hasUrls);
+    const classification = classify(text, hasFiles, hasUrls, urls);
     const title = extractTitle(text, urls);
     const tags = extractTags(text);
+    const contentType = hasUrls ? detectContentType(urls) : (hasFiles ? "file" : "text");
 
     // Build the Firestore document
     const doc = {
@@ -161,6 +212,7 @@ export default async function handler(req, res) {
       description: text,
       groupId: classification.groupId,
       tags,
+      contentType,
       source: "slack",
       slackMessageTs: event.ts,
       slackChannelId: event.channel,
@@ -182,12 +234,16 @@ export default async function handler(req, res) {
     try {
       await db.collection(classification.collection).add(doc);
 
-      // Reply in thread
-      const emoji = classification.groupId === "inbox" ? "📥" : "✅";
+      // Reply in thread with section-specific emoji and link
+      const SECTION_EMOJI = { library: "📚", vault: "🔒", references: "🌐", inbox: "📥" };
+      const emoji = SECTION_EMOJI[classification.collection] || "📥";
+      const section = classification.collection;
+      const siteUrl = "b-resources.vercel.app";
+
       const replyText =
         classification.groupId === "inbox"
-          ? `📥 Added to Inbox — classify it at b-resources.vercel.app`
-          : `✅ Added to ${classification.label}`;
+          ? `📥 Added to Inbox — triage it at ${siteUrl}/inbox`
+          : `${emoji} Added to ${classification.label} → ${siteUrl}/${section}`;
 
       await postSlackMessage(event.channel, replyText, event.ts);
     } catch (err) {
