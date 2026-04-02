@@ -308,8 +308,9 @@ export default async function handler(req, res) {
       await postSlackMessage(event.channel, replyText, event.ts);
     } catch (err) {
       console.error("Error processing resource:", err);
+      const errMsg = err?.message || err?.code || String(err);
       try {
-        await postSlackMessage(event.channel, "⚠️ Failed to save resource.", event.ts);
+        await postSlackMessage(event.channel, `⚠️ Failed: ${errMsg.slice(0, 200)}`, event.ts);
       } catch (_) {}
     }
 
