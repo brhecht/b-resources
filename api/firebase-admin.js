@@ -10,13 +10,21 @@ try {
   throw new Error("Invalid FIREBASE_SERVICE_ACCOUNT env var");
 }
 
-const app =
-  getApps().length === 0
-    ? initializeApp({
-        credential: cert(serviceAccount),
-        storageBucket: "b-things.firebasestorage.app",
-      })
-    : getApps()[0];
+const isNewApp = getApps().length === 0;
+const app = isNewApp
+  ? initializeApp({
+      credential: cert(serviceAccount),
+      storageBucket: "b-things.firebasestorage.app",
+    })
+  : getApps()[0];
 
-export const db = getFirestore(app);
+const _db = getFirestore(app);
+// Use REST instead of gRPC for Firestore — gRPC's persistent connection
+// doesn't survive Vercel's stateless serverless functions and causes
+// DEADLINE_EXCEEDED hangs (name resolution + LB pick stalls).
+if (isNewApp) {
+  _db.settings({ preferRest: true });
+}
+
+export const db = _db;
 export const bucket = getStorage(app).bucket();
