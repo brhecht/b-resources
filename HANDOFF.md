@@ -30,12 +30,18 @@ B Resources is the knowledge and asset hub for Humble Conviction. Three main sec
 - `vercel.json` — SPA rewrites + serverless function config
 
 ## Current Status
-Library and Vault pages work with full CRUD. References page deployed and functional (empty, ready for content). **Slack bot text messages work** (`ref:`, `vault:`, `library:` prefixes all work — confirmed Apr 2). **Slack bot does NOT process file uploads** — active bug. Raw body parsing fix applied May 5 to harden signature verification.
+Library, Vault, References pages work. **Slack bot signature verification fixed (May 5)** — verified end-to-end via Vercel logs and direct API tests. The Apr 2 belief that "text bot works" was incorrect: 40-day Vercel log audit showed **8 total events from Slack, all 401**. The bot has never successfully processed a real Slack message in production. Slack likely auto-disabled the event subscription after repeated 401s — Brian needs to re-verify the Request URL to reactivate.
 
 ## What Changed This Session (May 5, 2026)
-1. **Bug fix — raw body parsing:** `api/slack-events.js` added `export const config = { api: { bodyParser: false } }` and switched to manual Buffer stream reading for Slack signature verification. This ensures HMAC runs against the exact original bytes (not re-serialized JSON), which prevents 401 on edge cases where Vercel's parsed JSON key order differs.
+1. **Bug fix — raw body parsing:** `api/slack-events.js` added `export const config = { api: { bodyParser: false } }` and switched to manual Buffer stream reading for Slack signature verification. The previous code did `JSON.stringify(req.body)` against Vercel's pre-parsed body, which produces a different byte sequence than the original (key order, whitespace) → HMAC always failed → all events returned 401.
 2. **Bug fix — firebase-admin crash guard:** `api/firebase-admin.js` now wraps `JSON.parse(FIREBASE_SERVICE_ACCOUNT)` in try/catch to prevent cold-start crash if env var is missing or malformed.
-3. **HANDOFF.md updated** — Conflicts resolved, status corrected.
+3. **End-to-end verification (Vercel CLI):**
+   - URL verification challenge → 200 ✅
+   - Valid HMAC signature → 200 ✅
+   - Invalid HMAC signature → 401 ✅
+   - All 6 env vars confirmed present in Vercel: SLACK_BOT_TOKEN, SLACK_SIGNING_SECRET, FIREBASE_SERVICE_ACCOUNT, CRON_SECRET, ANTHROPIC_API_KEY, CAPTURE_TOKEN
+4. **Vercel logs audit (40d):** Confirmed no real Slack events processed. All historical traffic on Apr 2 deploy returned 401.
+5. **HANDOFF.md updated** — Status corrected to reflect actual production behavior.
 
 ## What Changed This Session (April 2, 2026)
 
@@ -66,16 +72,15 @@ Library and Vault pages work with full CRUD. References page deployed and functi
 
 ## Known Issues
 
-### ACTIVE: Slack bot ignores file uploads
-**Symptom:** Text-only messages (`vault: test`, `ref: test`) work perfectly. Messages with file attachments produce no response at all — no success, no error.
-**What was tried:**
-1. Added `file_share` subtype to allowed list — didn't help
-2. Opened subtype filter to accept everything except edits/deletes — didn't help
-3. Added `files:read` scope and `file_created` event — didn't help
-4. Restructured handler to respond 200 immediately (Slack 3-sec timeout) — didn't help for files
-5. Raw body parsing fix applied (May 5) — may help if signature was failing for file events specifically
-**Likely cause:** Slack sends file uploads as a different event type that the handler doesn't recognize, OR the `message.groups` event for private channels doesn't include file data in the same way as public channels. Needs Vercel logs to debug (project is on Brian's Vercel account).
-**Next step:** Get access to Vercel function logs to see the actual event payload from Slack when a file is shared. Alternatively, add a debug endpoint that logs the raw event body to Firestore temporarily.
+### RESOLVED: Slack signature verification (caused both "text works" illusion and "files don't work")
+**Symptom (historical):** Bot appeared to work for text in dev testing but never processed events in prod.
+**Root cause:** `JSON.stringify(req.body)` produced different bytes than Slack's original payload → HMAC always failed → 401 on every real event.
+**Fix:** `bodyParser: false` + manual raw Buffer reading. Verified May 5 with valid+invalid signature tests.
+**Note:** What looked like "files don't work, text does" was probably misinterpretation of Slack URL verification (which bypasses signature check) being mistaken for full bot functioning. With signature now fixed, both text AND files should work — needs end-to-end test in #b-resources to confirm.
+
+### POSSIBLE: Slack event subscription auto-disabled
+After 30+ days of 401 responses, Slack may have disabled the event subscription.
+**Action required:** Brian (or someone with Slack admin) goes to https://api.slack.com/apps/A0APJCW2DLZ → Event Subscriptions → click "Retry" or re-save the Request URL. Slack will send a fresh URL verification challenge that should now succeed.
 
 ### Pre-existing: Groups composite index
 `Load groups error: The query requires an index` — affects Library, Vault, and References equally. The `groups` collection needs a composite index on `collection` + `order`. Fallback works (loads without order). Link to create: in console error.
@@ -128,8 +133,11 @@ Library and Vault pages work with full CRUD. References page deployed and functi
 | Plain text (no URLs, no files) | Library | Ungrouped |
 
 ## PENDING — Next Session
-1. **Debug Slack bot file uploads** — Need Vercel logs or add debug logging to Firestore to see the actual event payload when a file is shared in #b-resources.
-2. **Create composite index for groups** — Follow the link in the console error to create `collection` + `order` composite index.
-3. **Test all References CRUD** — Add, edit, delete, pin, tags, groups, messages, file upload (via UI).
+1. **Reactivate Slack event subscription** — Go to https://api.slack.com/apps/A0APJCW2DLZ → Event Subscriptions → re-save the Request URL (`https://b-resources.vercel.app/api/slack-events`). Slack should send a challenge → 200 → green check.
+2. **End-to-end test in #b-resources:**
+   - `library: test resource` → bot replies in thread, doc in `library` collection
+   - `ref: https://youtube.com/watch?v=xyz` → bot classifies as Reference > Video
+   - Drop a file (image/PDF) → bot classifies, uploads to Storage, doc has `fileUrl`
+3. **Create composite index for groups** — Follow the link in the console error to create `collection` + `order` composite index.
 4. **Mobile responsive testing** for References page.
 5. **Seed References with starter content** if desired.
