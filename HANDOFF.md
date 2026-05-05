@@ -1,5 +1,5 @@
 # HANDOFF — B Resources
-*Last updated: April 2, 2026*
+*Last updated: May 5, 2026*
 *Deploy: https://b-resources.vercel.app*
 
 ## What This App Does
@@ -30,7 +30,12 @@ B Resources is the knowledge and asset hub for Humble Conviction. Three main sec
 - `vercel.json` — SPA rewrites + serverless function config
 
 ## Current Status
-Library and Vault pages work with full CRUD. References page deployed and functional (empty, ready for content). Slack bot works for TEXT messages (tested: `ref:`, `vault:`, `library:` prefixes all work). **Slack bot does NOT process file uploads** — this is the active bug.
+Library and Vault pages work with full CRUD. References page deployed and functional (empty, ready for content). **Slack bot text messages work** (`ref:`, `vault:`, `library:` prefixes all work — confirmed Apr 2). **Slack bot does NOT process file uploads** — active bug. Raw body parsing fix applied May 5 to harden signature verification.
+
+## What Changed This Session (May 5, 2026)
+1. **Bug fix — raw body parsing:** `api/slack-events.js` added `export const config = { api: { bodyParser: false } }` and switched to manual Buffer stream reading for Slack signature verification. This ensures HMAC runs against the exact original bytes (not re-serialized JSON), which prevents 401 on edge cases where Vercel's parsed JSON key order differs.
+2. **Bug fix — firebase-admin crash guard:** `api/firebase-admin.js` now wraps `JSON.parse(FIREBASE_SERVICE_ACCOUNT)` in try/catch to prevent cold-start crash if env var is missing or malformed.
+3. **HANDOFF.md updated** — Conflicts resolved, status corrected.
 
 ## What Changed This Session (April 2, 2026)
 
@@ -52,10 +57,12 @@ Library and Vault pages work with full CRUD. References page deployed and functi
 2. **Slack bot file_share subtype** — Was filtered out. Now accepts all subtypes except edits/deletes.
 3. **Slack 3-second timeout** — Handler now responds 200 immediately, processes async.
 
-### Firestore Rules Deployed
+### Firestore Rules Deployed (Apr 2)
 - Added `references` collection rule (auth required)
 - Added `inbox` collection rule (auth required)
 - Deployed from this repo via `firebase deploy --only firestore:rules --project b-things`
+
+⚠️ **Rules conflict:** Global CLAUDE.md says canonical rules live in `brain-inbox/firestore.rules`. But b-resources also deployed rules on Apr 2 and has the more complete ruleset (includes `references` + `inbox` which brain-inbox may not have). Until this is resolved, deploy rules from b-resources to avoid losing the Apr 2 additions. Long-term: consolidate into brain-inbox.
 
 ## Known Issues
 
@@ -66,6 +73,7 @@ Library and Vault pages work with full CRUD. References page deployed and functi
 2. Opened subtype filter to accept everything except edits/deletes — didn't help
 3. Added `files:read` scope and `file_created` event — didn't help
 4. Restructured handler to respond 200 immediately (Slack 3-sec timeout) — didn't help for files
+5. Raw body parsing fix applied (May 5) — may help if signature was failing for file events specifically
 **Likely cause:** Slack sends file uploads as a different event type that the handler doesn't recognize, OR the `message.groups` event for private channels doesn't include file data in the same way as public channels. Needs Vercel logs to debug (project is on Brian's Vercel account).
 **Next step:** Get access to Vercel function logs to see the actual event payload from Slack when a file is shared. Alternatively, add a debug endpoint that logs the raw event body to Firestore temporarily.
 
@@ -95,9 +103,6 @@ Library and Vault pages work with full CRUD. References page deployed and functi
 - **Account WITHOUT access:** `nmejiawork@gmail.com`
 - **Firestore rules deployed from this repo** on Apr 2 (references + inbox rules added)
 
-## Firebase Rules — NOTE
-Firestore rules were deployed from this repo on April 2, 2026 to add `references` and `inbox` collection rules. The file contains rules for ALL apps in the b-things project. Brian's long-term plan is to move rules to a dedicated infra repo.
-
 ## Design Decisions
 - **Modal is THE editing surface** — card click → modal with everything editable inline
 - **References = external content** — Articles, videos, research, guides, tools from outside HC
@@ -123,7 +128,7 @@ Firestore rules were deployed from this repo on April 2, 2026 to add `references
 | Plain text (no URLs, no files) | Library | Ungrouped |
 
 ## PENDING — Next Session
-1. **Debug Slack bot file uploads** — Need Vercel logs or add debug logging to Firestore. The bot receives text fine but files produce no response.
+1. **Debug Slack bot file uploads** — Need Vercel logs or add debug logging to Firestore to see the actual event payload when a file is shared in #b-resources.
 2. **Create composite index for groups** — Follow the link in the console error to create `collection` + `order` composite index.
 3. **Test all References CRUD** — Add, edit, delete, pin, tags, groups, messages, file upload (via UI).
 4. **Mobile responsive testing** for References page.

@@ -2,6 +2,8 @@ import crypto from "crypto";
 import { db, bucket } from "./firebase-admin.js";
 import { FieldValue } from "firebase-admin/firestore";
 
+export const config = { api: { bodyParser: false } };
+
 const SLACK_SIGNING_SECRET = process.env.SLACK_SIGNING_SECRET;
 const SLACK_BOT_TOKEN = process.env.SLACK_BOT_TOKEN;
 
@@ -206,9 +208,14 @@ export default async function handler(req, res) {
     return res.status(405).json({ error: "Method not allowed" });
   }
 
-  // Parse raw body for signature verification
-  const rawBody = typeof req.body === "string" ? req.body : JSON.stringify(req.body);
-  const body = typeof req.body === "string" ? JSON.parse(req.body) : req.body;
+  // Read raw body before any parsing (required for Slack signature verification)
+  const rawBody = await new Promise((resolve, reject) => {
+    const chunks = [];
+    req.on("data", (chunk) => chunks.push(chunk));
+    req.on("end", () => resolve(Buffer.concat(chunks).toString("utf8")));
+    req.on("error", reject);
+  });
+  const body = JSON.parse(rawBody);
 
   // Handle Slack URL verification challenge
   if (body.type === "url_verification") {
