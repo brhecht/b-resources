@@ -80,41 +80,41 @@ function classify(text, hasFiles, hasUrls, urls) {
   const lower = text.toLowerCase();
 
   // Explicit prefix routing (ref: as shorthand)
-  if (lower.startsWith("vault:")) return { groupId: "vault", collection: "vault", label: "Vault" };
-  if (lower.startsWith("library:") || lower.startsWith("lib:")) return { groupId: "library", collection: "library", label: "Library" };
-  if (lower.startsWith("reference:") || lower.startsWith("references:") || lower.startsWith("ref:")) return { groupId: "references", collection: "references", label: "References" };
+  if (lower.startsWith("vault:")) return { groupId: "", collection: "vault", label: "Vault" };
+  if (lower.startsWith("library:") || lower.startsWith("lib:")) return { groupId: "", collection: "library", label: "Library" };
+  if (lower.startsWith("reference:") || lower.startsWith("references:") || lower.startsWith("ref:")) return { groupId: "", collection: "references", label: "References" };
 
   // Keyword-based classification — Library (internal)
   if (lower.includes("framework") || lower.includes("playbook")) {
-    return { groupId: "library", collection: "library", label: "Library > Frameworks" };
+    return { groupId: "", collection: "library", label: "Library > Frameworks" };
   }
   if (lower.includes("sop") || lower.includes("process") || lower.includes("checklist")) {
-    return { groupId: "library", collection: "library", label: "Library > SOPs" };
+    return { groupId: "", collection: "library", label: "Library > SOPs" };
   }
 
   // Keyword-based classification — Vault (assets)
   if (lower.includes("template") || lower.includes("brand") || lower.includes("logo") || lower.includes("asset")) {
-    return { groupId: "vault", collection: "vault", label: "Vault > Brand Assets" };
+    return { groupId: "", collection: "vault", label: "Vault > Brand Assets" };
   }
 
   // Keyword-based classification — References (external content)
   if (lower.includes("article") || lower.includes("blog") || lower.includes("post")) {
-    return { groupId: "references", collection: "references", label: "References > Articles" };
+    return { groupId: "", collection: "references", label: "References > Articles" };
   }
   if (lower.includes("video") || lower.includes("watch") || lower.includes("tutorial")) {
-    return { groupId: "references", collection: "references", label: "References > Videos" };
+    return { groupId: "", collection: "references", label: "References > Videos" };
   }
   if (lower.includes("research") || lower.includes("study") || lower.includes("report") || lower.includes("whitepaper")) {
-    return { groupId: "references", collection: "references", label: "References > Research" };
+    return { groupId: "", collection: "references", label: "References > Research" };
   }
   if (lower.includes("guide") || lower.includes("how-to") || lower.includes("howto")) {
-    return { groupId: "references", collection: "references", label: "References > Guides" };
+    return { groupId: "", collection: "references", label: "References > Guides" };
   }
   if (lower.includes("tool") || lower.includes("app") || lower.includes("software") || lower.includes("platform")) {
-    return { groupId: "references", collection: "references", label: "References > Tools" };
+    return { groupId: "", collection: "references", label: "References > Tools" };
   }
   if (lower.includes("podcast") || lower.includes("episode")) {
-    return { groupId: "references", collection: "references", label: "References > Videos" };
+    return { groupId: "", collection: "references", label: "References > Videos" };
   }
 
   // URL-based classification — only auto-route when domain strongly implies section.
@@ -122,13 +122,13 @@ function classify(text, hasFiles, hasUrls, urls) {
   if (hasUrls) {
     const contentType = detectContentType(urls);
     if (contentType === "youtube" || contentType === "podcast") {
-      return { groupId: "references", collection: "references", label: "References > Videos" };
+      return { groupId: "", collection: "references", label: "References > Videos" };
     }
     if (contentType === "blog") {
-      return { groupId: "references", collection: "references", label: "References > Articles" };
+      return { groupId: "", collection: "references", label: "References > Articles" };
     }
     if (contentType === "github") {
-      return { groupId: "references", collection: "references", label: "References > Tools" };
+      return { groupId: "", collection: "references", label: "References > Tools" };
     }
   }
 
@@ -213,7 +213,7 @@ async function withRetry(fn, label, attempts = 3) {
   throw lastErr;
 }
 
-async function postSlackMessage(channel, text, threadTs) {
+async function postSlackMessage(channel, text, threadTs, broadcast = true) {
   const response = await fetch("https://slack.com/api/chat.postMessage", {
     method: "POST",
     headers: {
@@ -224,6 +224,10 @@ async function postSlackMessage(channel, text, threadTs) {
       channel,
       text,
       thread_ts: threadTs,
+      // Mirror threaded replies back into the main channel so the original
+      // poster (Brian, anyone) sees the confirmation without expanding the
+      // thread or subscribing to it.
+      reply_broadcast: broadcast,
     }),
   });
   const data = await response.json();
@@ -288,11 +292,13 @@ export default async function handler(req, res) {
 
       // Ambiguous content — don't write to Firestore, ask the user to specify.
       if (!classification) {
+        const ambigMention = event.user ? `<@${event.user}> ` : "";
+        const ambigThread = event.thread_ts || event.ts;
         await withRetry(
           () => postSlackMessage(
             event.channel,
-            "🤔 Where should this go? Reply with `vault:`, `library:`, or `ref:` followed by your content (or use it as a prefix when you post).",
-            event.ts
+            `${ambigMention}🤔 Where should this go? Reply with \`vault:\`, \`library:\`, or \`ref:\` followed by your content (or use it as a prefix when you post).`,
+            ambigThread
           ),
           "slack.postMessage"
         );
@@ -353,28 +359,30 @@ export default async function handler(req, res) {
         }
       }
 
-      // Reply in Slack thread
+      // Reply in Slack thread. All items land in the section's Inbox panel
+      // (no auto-group), so the link points there for tagging + grouping.
       const SECTION_EMOJI = { library: "📚", vault: "🔒", references: "🌐" };
       const emoji = SECTION_EMOJI[classification.collection] || "📄";
       const section = classification.collection;
       const siteUrl = "b-resources.vercel.app";
-      const needsGroup = !classification.groupId;
       const fileNote = hasFiles ? " 📎" : "";
+      const userMention = event.user ? `<@${event.user}> ` : "";
+      const replyText = `${userMention}${emoji} Added to ${classification.label}${fileNote} — open ${siteUrl}/${section} to tag & group from the Inbox`;
 
-      const replyText = needsGroup
-        ? `${emoji} Added to ${classification.label}${fileNote} (ungrouped) → ${siteUrl}/${section}`
-        : `${emoji} Added to ${classification.label}${fileNote} → ${siteUrl}/${section}`;
+      // Reply in the existing thread if the original message was in one;
+      // otherwise start a thread under the user's top-level message.
+      const threadTs = event.thread_ts || event.ts;
 
-      console.log("Posting reply to channel:", event.channel, "thread_ts:", event.ts, "text:", replyText);
+      console.log("Posting reply to channel:", event.channel, "thread_ts:", threadTs, "text:", replyText);
       await withRetry(
-        () => postSlackMessage(event.channel, replyText, event.ts),
+        () => postSlackMessage(event.channel, replyText, threadTs),
         "slack.postMessage"
       );
     } catch (err) {
       console.error("Error processing resource:", err);
       const errMsg = err?.message || err?.code || String(err);
       try {
-        await postSlackMessage(event.channel, `⚠️ Failed: ${errMsg.slice(0, 200)}`, event.ts);
+        await postSlackMessage(event.channel, `⚠️ Failed: ${errMsg.slice(0, 200)}`, event.thread_ts || event.ts);
       } catch (_) {}
     }
     })());
