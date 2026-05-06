@@ -117,7 +117,8 @@ function classify(text, hasFiles, hasUrls, urls) {
     return { groupId: "references", collection: "references", label: "References > Videos" };
   }
 
-  // URL-based classification — known external content domains → references
+  // URL-based classification — only auto-route when domain strongly implies section.
+  // Anything else falls through to "ambiguous" and the bot asks the user.
   if (hasUrls) {
     const contentType = detectContentType(urls);
     if (contentType === "youtube" || contentType === "podcast") {
@@ -129,15 +130,11 @@ function classify(text, hasFiles, hasUrls, urls) {
     if (contentType === "github") {
       return { groupId: "references", collection: "references", label: "References > Tools" };
     }
-    // Other URLs → references (ungrouped, user assigns group in kanban)
-    return { groupId: "", collection: "references", label: "References" };
   }
 
-  // Files without prefix → vault (ungrouped)
-  if (hasFiles) return { groupId: "", collection: "vault", label: "Vault" };
-
-  // Plain text without URLs or files → library (ungrouped)
-  return { groupId: "", collection: "library", label: "Library" };
+  // Ambiguous: no explicit prefix, no strong keyword/domain hint.
+  // Don't guess — ask the user to specify (vault: / library: / ref:).
+  return null;
 }
 
 function extractTitle(text, urls) {
@@ -288,6 +285,20 @@ export default async function handler(req, res) {
       const hasUrls = urls.length > 0;
 
       const classification = classify(text, hasFiles, hasUrls, urls);
+
+      // Ambiguous content — don't write to Firestore, ask the user to specify.
+      if (!classification) {
+        await withRetry(
+          () => postSlackMessage(
+            event.channel,
+            "🤔 Where should this go? Reply with `vault:`, `library:`, or `ref:` followed by your content (or use it as a prefix when you post).",
+            event.ts
+          ),
+          "slack.postMessage"
+        );
+        return;
+      }
+
       const title = extractTitle(text, urls);
       const tags = extractTags(text);
       const contentType = hasUrls ? detectContentType(urls) : (hasFiles ? "file" : "text");
