@@ -352,7 +352,10 @@ export default async function handler(req, res) {
         : `${emoji} Added to ${classification.label}${fileNote} → ${siteUrl}/${section}`;
 
       console.log("Posting reply to channel:", event.channel, "thread_ts:", event.ts, "text:", replyText);
-      await postSlackMessage(event.channel, replyText, event.ts);
+      await withRetry(
+        () => postSlackMessage(event.channel, replyText, event.ts),
+        "slack.postMessage"
+      );
     } catch (err) {
       console.error("Error processing resource:", err);
       const errMsg = err?.message || err?.code || String(err);
