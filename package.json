@@ -9,6 +9,7 @@
     "preview": "vite preview"
   },
   "dependencies": {
+    "@vercel/functions": "^3.5.0",
     "firebase": "^11.0.0",
     "firebase-admin": "^13.7.0",
     "react": "^19.0.0",

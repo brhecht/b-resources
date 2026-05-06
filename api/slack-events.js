@@ -1,4 +1,5 @@
 import crypto from "crypto";
+import { waitUntil } from "@vercel/functions";
 import { db, bucket } from "./firebase-admin.js";
 import { FieldValue } from "firebase-admin/firestore";
 
@@ -273,11 +274,13 @@ export default async function handler(req, res) {
       return res.status(200).json({ ok: true });
     }
 
-    // Respond to Slack immediately (3-second timeout)
-    // Processing continues below after response is sent
+    // Respond to Slack immediately (3-second timeout). The actual work is
+    // handed to waitUntil so Vercel keeps the function alive after the
+    // response is flushed — without this, Vercel suspends the container
+    // and any in-flight Firestore retries / Slack post-message calls die.
     res.status(200).json({ ok: true });
 
-    // --- Process in background after Slack ack ---
+    waitUntil((async () => {
     try {
       const text = event.text || "";
       const urls = extractUrls(text);
@@ -363,6 +366,7 @@ export default async function handler(req, res) {
         await postSlackMessage(event.channel, `⚠️ Failed: ${errMsg.slice(0, 200)}`, event.ts);
       } catch (_) {}
     }
+    })());
 
     return; // already sent 200 above
   }
