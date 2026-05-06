@@ -20,6 +20,7 @@ import TagFilter from "../components/TagFilter"
 import ViewSwitcher from "../components/ViewSwitcher"
 import GroupKanban from "../components/GroupKanban"
 import GroupManager from "../components/GroupManager"
+import InboxPanel from "../components/InboxPanel"
 import ListView from "../components/ListView"
 import ResourceCard from "../components/ResourceCard"
 import SidePanel from "../components/SidePanel"
@@ -543,6 +544,16 @@ export default function References({ user }) {
           onToggle={tag => setActiveTags(prev => prev.includes(tag) ? prev.filter(t => t !== tag) : [...prev, tag])}
           onClear={() => setActiveTags([])}
           accentColor={ACCENT}
+        />
+
+        <InboxPanel
+          items={docs}
+          groups={groups}
+          accent={ACCENT}
+          borderColor={BORDER}
+          mutedColor={MUTED}
+          onAssignGroup={handleGroupChange}
+          onTagsChange={handleTagsChange}
         />
 
         {loading ? (
