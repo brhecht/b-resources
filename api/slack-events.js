@@ -189,7 +189,7 @@ async function uploadSlackFile(slackFile, collection) {
 }
 
 async function postSlackMessage(channel, text, threadTs) {
-  await fetch("https://slack.com/api/chat.postMessage", {
+  const response = await fetch("https://slack.com/api/chat.postMessage", {
     method: "POST",
     headers: {
       Authorization: `Bearer ${SLACK_BOT_TOKEN}`,
@@ -201,6 +201,11 @@ async function postSlackMessage(channel, text, threadTs) {
       thread_ts: threadTs,
     }),
   });
+  const data = await response.json();
+  if (!data.ok) {
+    throw new Error(`chat.postMessage failed: ${data.error}`);
+  }
+  return data;
 }
 
 export default async function handler(req, res) {
@@ -312,6 +317,7 @@ export default async function handler(req, res) {
         ? `${emoji} Added to ${classification.label}${fileNote} (ungrouped) → ${siteUrl}/${section}`
         : `${emoji} Added to ${classification.label}${fileNote} → ${siteUrl}/${section}`;
 
+      console.log("Posting reply to channel:", event.channel, "thread_ts:", event.ts, "text:", replyText);
       await postSlackMessage(event.channel, replyText, event.ts);
     } catch (err) {
       console.error("Error processing resource:", err);
