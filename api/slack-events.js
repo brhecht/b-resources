@@ -188,6 +188,33 @@ async function uploadSlackFile(slackFile, collection) {
   }
 }
 
+// Retry helper for transient TLS/network errors on Vercel cold starts.
+// Firestore admin SDK occasionally fails the first TLS handshake with
+// "Client network socket disconnected before secure TLS connection was
+// established". A short retry resolves it on the warmed-up second attempt.
+async function withRetry(fn, label, attempts = 3) {
+  let lastErr;
+  for (let i = 1; i <= attempts; i++) {
+    try {
+      return await fn();
+    } catch (err) {
+      lastErr = err;
+      const msg = err?.message || String(err);
+      const transient =
+        msg.includes("socket disconnected") ||
+        msg.includes("ECONNRESET") ||
+        msg.includes("ETIMEDOUT") ||
+        msg.includes("EAI_AGAIN") ||
+        err?.code === 14 || // gRPC UNAVAILABLE
+        msg.includes("DEADLINE_EXCEEDED");
+      console.log(`[${label}] attempt ${i}/${attempts} failed: ${msg.slice(0, 150)}`);
+      if (!transient || i === attempts) throw err;
+      await new Promise((r) => setTimeout(r, 200 * i)); // 200ms, 400ms
+    }
+  }
+  throw lastErr;
+}
+
 async function postSlackMessage(channel, text, threadTs) {
   const response = await fetch("https://slack.com/api/chat.postMessage", {
     method: "POST",
@@ -288,20 +315,27 @@ export default async function handler(req, res) {
         doc.fileSize = event.files[0].size || 0;
       }
 
-      // Save to Firestore first (fast)
-      const docRef = await db.collection(classification.collection).add(doc);
+      // Save to Firestore first (fast). Retry-wrapped: Vercel cold starts
+      // sometimes drop the first TLS handshake to firestore.googleapis.com.
+      const docRef = await withRetry(
+        () => db.collection(classification.collection).add(doc),
+        "firestore.add"
+      );
 
       // Upload file to Firebase Storage (slow — runs after Firestore save)
       if (hasFiles) {
         const uploaded = await uploadSlackFile(event.files[0], classification.collection);
         if (uploaded) {
-          await docRef.update({
-            fileUrl: uploaded.fileUrl,
-            fileName: uploaded.fileName,
-            fileSize: uploaded.fileSize,
-            fileType: uploaded.fileType,
-            storagePath: uploaded.storagePath,
-          });
+          await withRetry(
+            () => docRef.update({
+              fileUrl: uploaded.fileUrl,
+              fileName: uploaded.fileName,
+              fileSize: uploaded.fileSize,
+              fileType: uploaded.fileType,
+              storagePath: uploaded.storagePath,
+            }),
+            "firestore.update"
+          );
         }
       }
 
