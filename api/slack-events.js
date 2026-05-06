@@ -35,10 +35,10 @@ function verifySlackSignature(req, rawBody) {
       .update(sigBasestring)
       .digest("hex");
 
-  return crypto.timingSafeEqual(
-    Buffer.from(mySignature),
-    Buffer.from(signature)
-  );
+  const mySigBuf = Buffer.from(mySignature);
+  const sigBuf = Buffer.from(signature);
+  if (mySigBuf.length !== sigBuf.length) return false;
+  return crypto.timingSafeEqual(mySigBuf, sigBuf);
 }
 
 function extractUrls(text) {
